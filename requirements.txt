@@ -1,0 +1,10 @@
+flask
+google-generativeai
+werkzeug
+boto3
+numpy
+Pillow
+requests
+google-cloud-firestore
+python-dotenv
+gunicorn

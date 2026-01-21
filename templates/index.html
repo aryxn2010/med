@@ -1,0 +1,3610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sahayak.ai | Medical Intelligence</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <style>
+:root {
+    /* Dark Theme Palette - Clean Black */
+    --bg-dark-deep: #050507; 
+    --bg-panel: rgba(20, 25, 30, 0.6); 
+
+    /* Professional Blue Theme (Replaces Orange) */
+    --accent: #3b82f6; /* Bright Professional Blue */
+    --accent-glow: rgba(59, 130, 246, 0.5); /* Blue Glow */
+    
+    --text-main: #ffffff;
+    --text-muted: #94a3b8;
+    
+    --danger: #ef4444;
+    --success: #10b981;
+    --radius: 24px;
+
+    /* Glassmorphism */
+    --glass-surface: rgba(255, 255, 255, 0.03);
+    --glass-border: 1px solid rgba(255, 255, 255, 0.08);
+    --glass-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+/* --- MODERN SAVE COMPONENT (Universal) --- */
+.save-action-card {
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(59, 130, 246, 0.15);
+    border-radius: 16px;
+    padding: 20px;
+    margin-top: 25px;
+    width: 100%;
+    box-sizing: border-box; /* Prevents overflow */
+    backdrop-filter: blur(10px);
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    animation: slideUpFade 0.4s ease-out;
+}
+
+.save-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 15px;
+    color: #94a3b8;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.save-input-group {
+    position: relative;
+    margin-bottom: 15px;
+    width: 100%;
+}
+
+.save-input-modern {
+    width: 100%;
+    background: rgba(2, 6, 23, 0.5); /* Very dark background */
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    padding: 14px 16px;
+    color: white;
+    font-size: 1rem;
+    outline: none;
+    transition: all 0.3s ease;
+    box-sizing: border-box; /* CRITICAL for mobile alignment */
+}
+
+.save-input-modern::placeholder {
+    color: rgba(255, 255, 255, 0.3);
+}
+
+.save-input-modern:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+    background: rgba(2, 6, 23, 0.8);
+}
+
+.save-btn-row {
+    display: flex;
+    gap: 10px;
+    width: 100%;
+}
+
+.save-btn-row button {
+    flex: 1; /* Both buttons take equal width */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 12px;
+    border-radius: 10px;
+    font-size: 0.95rem;
+    white-space: nowrap; /* Prevents text wrapping */
+}
+
+/* Mobile Safety Check */
+@media (max-width: 480px) {
+    .save-action-card {
+        padding: 15px; /* Slightly less padding on tiny screens */
+    }
+    .save-btn-row {
+        flex-direction: column; /* Stack buttons on very small screens */
+    }
+    .save-btn-row button {
+        width: 100%;
+    }
+}
+body {
+    top: 0px !important;
+}
+.sidebar, .main-content {
+    top: 0 !important;
+}
+/* Existing rule around line 78 */
+.card-content {
+    padding: 25px;
+    /* Add these lines below */
+    overflow-y: auto;
+    max-height: calc(85vh - 140px); /* Ensure content scrolls within viewport */
+}
+/* --- DEEP SUPPRESSION --- */
+html, body {
+    margin-top: 0px !important;
+    top: 0px !important;
+    position: static !important;
+}
+
+
+.lang-selector {
+    position: fixed;
+    top: 20px;
+    right: 40px;
+    z-index: 2000;
+    display: flex;
+    gap: 8px;
+    background: rgba(10, 15, 25, 0.8);
+    padding: 3px;
+    border-radius: 14px;
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    backdrop-filter: blur(10px);
+}
+.lang-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    padding: 6px 12px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 0.75rem;
+    font-weight: 600;
+    transition: all 0.2s;
+}
+.lang-btn.active {
+    background: var(--accent);
+    color: white;
+    box-shadow: 0 0 10px var(--accent-glow);
+}
+/* 1. The "How it Works" Bracket Tag */
+.instruction-tag {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--accent); /* Blue */
+    margin-top: 8px;
+    font-family: 'Courier New', monospace;
+    opacity: 0.8;
+    letter-spacing: 0.5px;
+}
+
+.bluish-glass {
+    background: linear-gradient(180deg, rgba(59, 130, 246, 0.05) 0%, rgba(30, 41, 59, 0.2) 100%);
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    box-shadow: 0 0 30px rgba(59, 130, 246, 0.05);
+    /* Removed: transition and transform properties */
+}
+.btn-record.recording, .btn-accent.recording { /* Added .btn-accent.recording */
+    background: linear-gradient(135deg, #0ea5e9, #3b82f6); /* Cyan-Blue Gradient */
+    color: white; 
+    border: 1px solid #3b82f6;
+    box-shadow: 0 0 25px rgba(59, 130, 246, 0.6); /* Blue Glow */
+    animation: pulseBlue 2s infinite; 
+}
+/* 3. Animative Entry for Boxes */
+.slide-up-fade {
+    animation: slideUpFade 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    opacity: 0;
+    transform: translateY(20px);
+}
+
+@keyframes slideUpFade {
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* 4. Fix for Header Icons */
+.header-icon {
+    color: var(--accent);
+    margin-right: 10px;
+    filter: drop-shadow(0 0 10px rgba(59, 130, 246, 0.4));
+}
+body {
+    top: 0px !important;
+    position: static !important;
+}
+/* --- MINIMIZED MODE (Triggers after Diagnosis) --- */
+/* --- MINIMIZED MODE (Responsive Fix) --- */
+.bio-centered-container.minimized-mode {
+    display: flex !important;
+    flex-direction: row !important; /* Row on PC */
+    flex-wrap: wrap !important;     /* Allow wrapping if screen gets tight */
+    align-items: center !important; /* Perfect vertical alignment */
+    justify-content: center !important;
+    gap: 12px;
+    padding: 10px;
+    width: 100%;
+    transition: all 0.4s ease;
+}
+
+/* 1. Record Button (Compact) */
+.bio-centered-container.minimized-mode #recordBtn {
+    width: auto !important;
+    min-width: 140px;
+    height: 42px !important;
+    font-size: 0.85rem !important;
+    margin: 0 !important;
+    padding: 0 15px !important;
+    white-space: nowrap;
+}
+
+/* 2. Upload Box (Compact Pill) */
+.bio-centered-container.minimized-mode .file-upload-wrapper {
+    width: auto !important;
+    min-width: 50px;
+    max-width: 200px !important;
+    height: 42px !important;
+    min-height: 42px !important;
+    margin: 0 !important;
+    padding: 0 15px !important;
+    flex-direction: row !important;
+    gap: 8px;
+    border-radius: 50px !important; /* Pill shape */
+    background: rgba(255, 255, 255, 0.05) !important;
+}
+.bio-centered-container.minimized-mode .file-upload-wrapper i {
+    font-size: 1rem !important;
+    margin: 0 !important;
+}
+.bio-centered-container.minimized-mode .file-upload-wrapper span {
+    font-size: 0.8rem !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 120px; /* Prevent text overflow */
+}
+
+/* 3. Hide Divider */
+.bio-centered-container.minimized-mode .or-divider {
+    display: none !important;
+}
+
+/* 4. Context/Input Section (Flexible) */
+.bio-centered-container.minimized-mode #bio-context-stage {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 10px;
+    margin: 0 !important;
+    flex-grow: 1; /* Take remaining space */
+    max-width: 600px; /* Cap width on huge screens */
+}
+
+.bio-centered-container.minimized-mode .input-group {
+    margin: 0 !important;
+    flex-grow: 1;
+}
+
+/* Fix Input Text Alignment */
+.bio-centered-container.minimized-mode #audioPrompt {
+    height: 42px !important;
+    padding: 8px 15px !important;
+    font-size: 0.9rem !important;
+    line-height: 1.2 !important; /* Centers text vertically */
+    resize: none;
+    border-radius: 10px;
+}
+.bio-centered-container.minimized-mode .input-group label {
+    display: none; 
+}
+
+/* 5. Run Button (Compact) */
+.bio-centered-container.minimized-mode #btn-bio-final {
+    width: auto !important;
+    height: 42px !important;
+    margin: 0 !important;
+    padding: 0 20px !important;
+    font-size: 0.9rem !important;
+    white-space: nowrap;
+}
+
+/* --- MOBILE OVERRIDES (Prevents "Out of Box" Issue) --- */
+@media (max-width: 768px) {
+    .bio-centered-container.minimized-mode {
+        gap: 10px;
+        padding: 0 5px; /* Reduce padding */
+    }
+
+    /* On Mobile, buttons become 2 per row instead of 1 long row */
+    .bio-centered-container.minimized-mode #recordBtn,
+    .bio-centered-container.minimized-mode .file-upload-wrapper {
+        flex: 1 1 45%; /* Share width */
+        max-width: none !important; /* Allow fill */
+        justify-content: center;
+    }
+    
+    /* Input drops to next line and fills width */
+    .bio-centered-container.minimized-mode #bio-context-stage {
+        width: 100% !important;
+        flex-wrap: nowrap; /* Keep input and run button together */
+    }
+    
+    .bio-centered-container.minimized-mode #audioPrompt {
+        width: 100%;
+    }
+    
+    /* Ensure text doesn't overflow in the upload box */
+    .bio-centered-container.minimized-mode .file-upload-wrapper span {
+        max-width: 80px; 
+    }
+}
+/* 6. Expand the Result Box (The "Big" Effect) */
+.result-widget.expanded-view {
+    display: block;
+    margin-top: 20px;
+    padding: 35px; /* Bigger padding */
+    border-left: 6px solid var(--accent); /* Thicker border */
+    animation: expandIn 0.6s ease;
+}
+
+@keyframes expandIn {
+    from { transform: scale(0.95); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+}
+body {
+    font-family: 'Inter', sans-serif;
+    margin: 0;
+    height: 100vh;
+    color: var(--text-main);
+    display: flex;
+    overflow: hidden;
+    
+    /* NEW CLEAN BACKGROUND: Deep Slate Blue/Black */
+    background-color: #0b1121; 
+    background-image: linear-gradient(180deg, #1e293b 0%, #0b1121 100%);
+    background-attachment: fixed;
+    background-size: cover;
+}
+       #scan-image-container {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    width: 90%;
+    height: 220px; /* Fixed height to match scanner */
+    z-index: 1;
+    overflow: hidden; /* Hide overflow if too many images */
+}
+/* --- EMERGENCY SECTION STYLES --- */
+.emergency-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 30px;
+    height: 100%;
+}
+
+/* 1. The Globe/Radar Visual */
+.globe-container {
+    position: relative;
+    width: 100%;
+    height: 400px;
+    background: radial-gradient(circle at center, rgba(255, 255, 255, 0.05) 0%, transparent 70%);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    margin: 0 auto;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.static-globe {
+    width: 280px;
+    height: 280px;
+    background: url('https://upload.wikimedia.org/wikipedia/commons/thumb/2/2c/India_-_locator_map_%28white%29.svg/1024px-India_-_locator_map_%28white%29.svg.png'); /* White India Map */
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+    opacity: 0.8;
+    z-index: 2;
+    filter: drop-shadow(0 0 20px rgba(255, 255, 255, 0.3));
+}
+
+.radar-ring {
+    position: absolute;
+    border: 2px solid rgba(239, 68, 68, 0.3); /* Red Alert Color */
+    border-radius: 50%;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    animation: radarRipple 2s linear infinite;
+}
+
+@keyframes radarRipple {
+    0% { width: 0; height: 0; opacity: 1; }
+    100% { width: 400px; height: 400px; opacity: 0; }
+}
+
+/* 2. Emergency Button */
+.sos-btn {
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #ef4444, #b91c1c);
+    border: 4px solid rgba(255, 255, 255, 0.2);
+    color: white;
+    font-size: 1.5rem;
+    font-weight: 800;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 0 50px rgba(239, 68, 68, 0.6);
+    cursor: pointer;
+    transition: transform 0.2s;
+    text-decoration: none;
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    z-index: 10;
+}
+.sos-btn:hover { transform: scale(1.1); box-shadow: 0 0 70px rgba(239, 68, 68, 0.8); }
+.sos-label { font-size: 0.8rem; font-weight: 400; margin-top: 5px; opacity: 0.9; }
+
+/* 3. Hospital List */
+.hospital-card {
+    background: rgba(255, 255, 255, 0.03);
+    border-left: 3px solid var(--accent);
+    padding: 15px;
+    margin-bottom: 10px;
+    border-radius: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: all 0.2s;
+}
+.hospital-card:hover { background: rgba(255, 255, 255, 0.06); }
+.h-name { font-weight: 600; color: white; display: block; }
+.h-dist { font-size: 0.8rem; color: var(--text-muted); }
+.h-actions { display: flex; gap: 8px; }
+
+.btn-nav { background: rgba(59, 130, 246, 0.2); color: #60a5fa; padding: 6px 12px; border-radius: 4px; text-decoration: none; font-size: 0.8rem; }
+.btn-call { background: rgba(16, 185, 129, 0.2); color: #34d399; padding: 6px 12px; border-radius: 4px; text-decoration: none; font-size: 0.8rem; }
+
+@media (max-width: 768px) {
+    /* Add inside @media (max-width: 768px) */
+#section-bio .glass-card {
+    padding: 30px 15px !important;
+}
+
+#section-bio .bio-centered-container {
+    width: 100%;
+    align-items: center !important;
+}
+    .lang-selector {
+        top: auto;
+bottom: 25px;
+right: 119px;
+        transform: translateX(50%);
+        width: fit-content;
+        box-shadow: 0 -5px 20px rgba(0,0,0,0.5);
+    }
+    .emergency-grid { grid-template-columns: 1fr; }
+    .globe-container { height: 250px; }
+    .static-globe { width: 150px; height: 150px; }
+}
+/* Individual images in the scanner */
+.scan-img-item {
+    height: 100%; /* Default to full height */
+    max-width: 100%;
+    object-fit: contain;
+    border-radius: 8px;
+    border: 1px solid rgba(249, 115, 22, 0.4);
+    box-shadow: 0 0 20px rgba(249, 115, 22, 0.1);
+}
+
+/* Adjust for multiple images */
+.scan-grid-mode .scan-img-item {
+    height: 48%; /* Split height for grid */
+    width: auto;
+} 
+.visual-theme-card {
+    /* Orange Gradient Background */
+    background: radial-gradient(circle at top right, rgba(249, 115, 22, 0.08), transparent 40%),
+                linear-gradient(180deg, rgba(20, 25, 30, 0.9) 0%, rgba(10, 12, 15, 0.95) 100%);
+    border: 1px solid rgba(249, 115, 22, 0.2); /* Orange Border */
+    box-shadow: 0 0 30px rgba(249, 115, 22, 0.05);
+    position: relative;
+    overflow: hidden;
+    min-height: 400px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center; /* <--- FIXES THE LEFT ALIGNMENT ISSUE */
+    padding: 20px;       /* Ensures content doesn't touch edges */
+}
+
+/* Orange Grid Overlay */
+.visual-theme-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background-image: 
+        linear-gradient(rgba(249, 115, 22, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(249, 115, 22, 0.03) 1px, transparent 1px);
+    background-size: 30px 30px;
+    pointer-events: none;
+    z-index: 0;
+}
+/* --- SCANNER ANIMATION UI --- */
+.scanner-state {
+    transition: opacity 0.4s ease;
+    width: 100%;
+    z-index: 2;
+}
+/* Add this new rule to center the upload inputs */
+#vis-state-upload {
+    display: flex;
+    flex-direction: column;
+    align-items: center;     /* Centers items horizontally */
+    justify-content: center; /* Centers items vertically if height allows */
+}
+.hidden-state {
+    display: none !important;
+    opacity: 0;
+}
+
+#vis-state-scanning {
+    position: relative;
+    height: 350px;
+    width: 100%;
+    max-width: 600px; /* Constrain width for better centering */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(circle, rgba(249, 115, 22, 0.05) 0%, transparent 70%);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.scan-img-preview {
+    max-height: 220px;
+    max-width: 85%;
+    border-radius: 8px;
+    border: 1px solid rgba(249, 115, 22, 0.4);
+    box-shadow: 0 0 20px rgba(249, 115, 22, 0.1);
+    z-index: 1;
+}
+
+.scan-line {
+    width: 90%;
+    height: 2px;
+    background: var(--accent); /* Uses Blue Variable */
+    box-shadow: 0 0 15px var(--accent), 0 0 30px var(--accent);
+    position: absolute;
+    top: 10%; left: 5%;
+    animation: medicalScan 3s ease-in-out infinite;
+    z-index: 5;
+    opacity: 0.8;
+}
+
+.scan-line::after {
+    content: '';
+    position: absolute;
+    top: -40px; left: 0; width: 100%; height: 40px;
+    background: linear-gradient(to top, rgba(249, 115, 22, 0.3), transparent);
+}
+@keyframes scanMove {
+    0% { top: 10%; opacity: 0; }
+    50% { opacity: 1; }
+    100% { top: 90%; opacity: 0; }
+}
+
+/* 3. Result State */
+#vis-state-result {
+    text-align: left;
+    width: 100%;
+    padding: 10px;
+    animation: fadeIn 0.5s ease;
+}
+.med-tag {
+    background: rgba(59, 130, 246, 0.1);
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    display: inline-block;
+    margin-bottom: 10px;
+}
+.bio-centered-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 25px;
+    padding: 20px 0;
+}
+
+.disabled-stage {
+    opacity: 0.4;
+    pointer-events: none;
+    transition: all 0.3s ease;
+    filter: grayscale(1);
+}
+
+.active-stage {
+    opacity: 1;
+    pointer-events: all;
+    filter: grayscale(0);
+}
+
+.symptom-box-wrapper {
+    width: 100%;
+    max-width: 500px; /* Smaller width as requested */
+    margin: 20px auto 0 auto;
+    text-align: center;
+}
+
+#btn-bio-final {
+    display: none; /* Hidden by default */
+    width: 100%; 
+    max-width: 300px;
+    margin-top: 20px;
+    font-size: 1.1rem;
+    padding: 15px;
+}
+#section-bio .header-title h2 {
+    font-size: 36px; /* Authority */
+    margin-bottom: 8px;
+    letter-spacing: -0.5px;
+}
+#section-bio .header-title p {
+    font-size: 15px;
+    opacity: 0.6; /* Reduced opacity */
+    margin-bottom: 40px; /* Spacing below */
+}
+
+/* 2. Container Fixes */
+.bio-card-layout {
+    max-width: 920px; /* 880-960px range */
+    margin: 0 auto;   /* Centered Horizontally */
+    padding: 50px 60px !important; /* More internal padding */
+    display: flex;
+    flex-direction: column;
+    align-items: center; /* Center content vertically/horizontally */
+    gap: 25px; /* Base rhythm */
+}
+
+/* 3. Record Button (Dominant) */
+.btn-bio-record {
+    height: 64px;
+    width: 260px;
+    font-size: 1.1rem;
+    font-weight: 600;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+    border-radius: 50px;
+    /* Idle Breathing Animation */
+    animation: breathe-idle 3s ease-in-out infinite; 
+    z-index: 2;
+}
+.btn-bio-record i { font-size: 1.3rem; } /* Larger Icon */
+.btn-bio-record.recording { animation: pulse 1.5s infinite; } /* Override when active */
+
+/* 4. Upload Box (Secondary) */
+.bio-upload-compact {
+    width: 260px; /* Match button width */
+    min-height: 100px; /* Reduced height (-30%) */
+    padding: 20px;
+    border-width: 1px; /* Thinner border */
+    border-color: rgba(255,255,255,0.1);
+    background: transparent;
+    margin-top: 10px;
+}
+.bio-upload-compact:hover {
+    border-color: var(--primary);
+    background: rgba(255,255,255,0.02);
+    transform: scale(1.02); /* Subtle scale */
+}
+.bio-upload-text {
+    font-size: 0.85rem;
+    color: var(--text-muted); /* Lower contrast */
+    margin-top: 8px;
+}
+
+/* 5. Symptoms Input (Tertiary/Context) */
+.bio-context-wrapper {
+    width: 70%; /* 70% Width constraint */
+    margin-top: 20px; /* Gap from actions */
+    text-align: center;
+}
+.bio-context-wrapper label {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    opacity: 0.7;
+    margin-bottom: 8px;
+}
+.bio-symptoms-input {
+    height: 52px; /* Fixed height constraint */
+    background: rgba(255,255,255,0.03) !important; /* Lower contrast/De-emphasized */
+    border: 1px solid rgba(255,255,255,0.05);
+    text-align: center;
+    resize: none; /* Prevent resizing */
+}
+.bio-symptoms-input:focus {
+    background: rgba(0,0,0,0.3) !important;
+    border-color: var(--primary);
+    text-align: left;
+    padding-left: 20px;
+}
+
+/* 6. Analyze Button */
+.btn-bio-analyze {
+    width: 260px;
+    height: 56px;
+    margin-top: 20px; /* Section gap */
+    opacity: 0.5; /* Disabled look by default */
+    cursor: not-allowed;
+    background: var(--glass-surface);
+    border: 1px solid rgba(255,255,255,0.1);
+}
+.btn-bio-analyze.active {
+    opacity: 1;
+    cursor: pointer;
+    background: var(--accent);
+    border-color: var(--accent);
+    box-shadow: 0 0 20px var(--accent-glow);
+}
+
+@keyframes breathe-idle {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0); transform: scale(1); }
+    50% { box-shadow: 0 0 15px rgba(249, 115, 22, 0.15); transform: scale(1.02); }
+}
+        /* --- COMPACT BUTTON ROW --- */
+.action-controls {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 15px;
+    margin-bottom: 20px;
+}
+/* --- SCROLLING WAVEFORM (ChatGPT Style) --- */
+.scrolling-wave {
+    display: none;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px; /* Slightly wider gap */
+    height: 60px; /* Taller container */
+    width: 100%; /* Force full width */
+    flex-grow: 1; /* Allow it to fill remaining space in flex containers */
+    overflow: hidden;
+    mask-image: linear-gradient(to right, transparent, black 10%);
+    -webkit-mask-image: linear-gradient(to right, transparent, black 10%);
+    margin-left: 20px; /* Spacing from the "Listening" icon if needed */
+}
+
+.wave-bar-scroll {
+    width: 6px; /* Slightly thicker bars */
+    background-color: white;
+    border-radius: 50px;
+    flex-shrink: 0;
+    transition: all 0.1s ease; /* Smoother height transition */
+    animation: growIn 0.1s ease-out;
+}
+
+@keyframes growIn {
+    from { height: 0; opacity: 0; }
+    to { opacity: 1; }
+}
+.btn-compact {
+    padding: 12px 30px;      /* Increased padding for PC visibility */
+    font-size: 1rem;         /* Standard readable text */
+    min-width: 180px;        /* Professional width */
+    height: 50px;            /* Fixed height for consistency */
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+    border-radius: 12px;     /* Slightly squarer, more modern */
+}
+.interaction-wrapper {
+    transition: all 0.3s ease;
+    position: relative; /* Creates a new layer */
+    z-index: 50;        /* Forces buttons to sit ABOVE the file input */
+}
+.or-text {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    font-weight: 600;
+    text-transform: uppercase;
+}
+.file-upload-wrapper .interaction-wrapper {
+    margin-top: 25px;
+    padding-top: 20px;
+    border-top: 1px dashed rgba(255, 255, 255, 0.1);
+}
+.scan-grid {
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background-image: 
+        linear-gradient(rgba(16, 185, 129, 0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(16, 185, 129, 0.05) 1px, transparent 1px);
+    background-size: 20px 20px;
+    z-index: 0;
+}
+@keyframes medicalScan {
+    0% { top: 10%; opacity: 0; }
+    15% { opacity: 1; }
+    85% { opacity: 1; }
+    100% { top: 90%; opacity: 0; }
+}
+
+#scan-status-text {
+    margin-top: 25px;
+    color: var(--accent); /* Uses Blue Variable */
+    font-family: 'Inter', monospace;
+    font-size: 0.95rem;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    font-weight: 600;
+    text-align: center;
+    animation: pulseText 1.5s infinite;
+}
+
+@keyframes pulseText {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 1; }
+}
+.mode-label {
+    display: none; /* Hidden by default */
+    text-align: center;
+    color: var(--accent);
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin-bottom: 15px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    animation: fadeIn 0.5s ease;
+}
+.dictation-surface {
+    display: flex; 
+    flex-direction: column; 
+    align-items: center; 
+    justify-content: center; 
+    min-height: 100px; 
+    width: 100%;       /* Added to prevent width compression */
+    padding: 10px 0;   
+    position: relative; 
+    background: transparent; 
+    border-top: 1px solid rgba(255,255,255,0.05);
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+/* 1. History Lines (Settled) */
+.transcript-history {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    width: 100%;
+    margin-bottom: 15px;
+    mask-image: linear-gradient(to bottom, transparent, black 40%); 
+    -webkit-mask-image: linear-gradient(to bottom, transparent, black 40%);
+}
+
+.history-line {
+    color: var(--text-muted); /* Slate/Gray */
+    font-size: 0.9rem;
+    font-weight: 400;
+    opacity: 0.5;
+}
+
+.active-line-wrapper {
+    height: auto;             
+    min-height: 30px;         /* CHANGED: Reduced from 40px */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;               /* CHANGED: Removed padding (was 10px 0) */
+}
+.active-line-text {
+    color: #ffffff; 
+    font-size: 1.1rem;
+    font-weight: 500;
+    letter-spacing: 0.3px;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.2);
+}
+#live-text {
+    transition: all 0.1s;
+    white-space: normal;      /* ALLOW WRAPPING (Fixes "Processi..." cut off) */
+    overflow: visible;        /* Show everything */
+    text-overflow: clip;      /* No ellipsis */
+    max-width: 90%;           /* Use more width */
+    display: inline-block;
+    text-align: center;       /* Center align multi-line text */
+    line-height: 1.5;         /* Better spacing between icon and text */
+}
+/* Cursor Blink */
+.active-cursor {
+    display: inline-block;
+    width: 2px;
+    height: 1.2em;
+    background-color: var(--accent); /* Orange/Amber */
+    margin-left: 5px;
+    animation: blink 1s infinite;
+    vertical-align: middle;
+}
+
+/* 3. Neutral Clinical Waveform */
+.clinical-visualizer {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    height: 24px;
+    margin-top: 10px;
+    opacity: 0; /* Hidden until recording */
+    transition: opacity 0.3s ease;
+}
+
+.clinical-bar {
+    width: 3px; /* Thin, refined */
+    background: #64748b; /* Neutral Slate Gray */
+    border-radius: 4px;
+    height: 4px;
+    transition: height 0.05s ease;
+}
+
+/* Helper Animations */
+@keyframes blink { 50% { opacity: 0; } }
+        /* SPACIOUS HISTORY GRID */
+        /* --- COMPACT BUTTON FIX --- */
+
+
+.dictation-surface {
+    display: flex; /* keep as is */
+    flex-direction: column; /* keep as is */
+    align-items: center; /* keep as is */
+    justify-content: center; /* keep as is */
+    min-height: 120px; /* CHANGED: Reduced from 200px */
+    padding: 10px 0;   /* CHANGED: Reduced from 20px 0 */
+    position: relative; /* keep as is */
+    transition: all 0.3s ease; /* keep as is */
+}
+
+.transcript-history {
+    display: flex; /* keep as is */
+    flex-direction: column; /* keep as is */
+    align-items: center; /* keep as is */
+    gap: 8px; /* keep as is */
+    width: 100%; /* keep as is */
+    margin-bottom: 5px; /* CHANGED: Reduced from 15px */
+    mask-image: linear-gradient(to bottom, transparent, black 20%); /* keep as is */
+    -webkit-mask-image: linear-gradient(to bottom, transparent, black 20%); /* keep as is */
+}
+
+.history-line {
+    color: var(--text-muted); /* Gray/Slate */
+    font-size: 0.95rem;
+    font-weight: 400;
+    text-align: center;
+    animation: slideUp 0.3s ease-out forwards;
+    opacity: 0.6;
+}
+
+/* Active Line (Live) */
+.active-line-container {
+    height: 40px; /* Fixed height to prevent jumping */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+}
+
+.active-line-text {
+    color: #ffffff; /* Bright White */
+    font-size: 1.2rem;
+    font-weight: 500;
+    text-align: center;
+    letter-spacing: 0.3px;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.2);
+}
+
+/* The Cursor/Glow */
+.active-cursor {
+    display: inline-block;
+    width: 2px;
+    height: 1.2em;
+    background-color: var(--accent);
+    margin-left: 5px;
+    animation: blink 1s infinite;
+    vertical-align: middle;
+}
+
+/* Clinical Waveform (Neutral Slate) */
+.clinical-visualizer {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    height: 30px;
+    margin-top: 20px;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.clinical-bar {
+    width: 4px; /* Thinner bars */
+    background: #64748b; /* Slate Gray (Neutral) */
+    border-radius: 4px;
+    height: 4px;
+    transition: height 0.05s ease;
+}
+
+/* Confirmation Message */
+.dictation-confirm {
+    margin-top: 15px;
+    font-size: 0.85rem;
+    color: var(--success);
+    opacity: 0;
+    transition: opacity 0.5s ease;
+    text-align: center;
+}
+
+@keyframes slideUp {
+    from { transform: translateY(20px); opacity: 0; }
+    to { transform: translateY(0); opacity: 0.6; }
+}
+@keyframes blink { 50% { opacity: 0; } }
+#history-section {
+    display: flex;
+    flex-direction: column;
+    gap: 25px; /* Adds breathing room between records */
+    padding-bottom: 50px;
+}
+
+.history-card {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 20px;
+    padding: 25px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+}
+/* --- WAVEFORM VISUALIZER --- */
+.visualizer-container {
+    display: none; /* Hidden by default */
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 40px;
+    margin-top: 15px;
+}
+.wave-bar {
+    width: 6px;
+    background: var(--accent);
+    border-radius: 10px;
+    height: 10px;
+    transition: height 0.05s ease;
+    box-shadow: 0 0 10px var(--accent-glow);
+}
+
+/* --- OR SEPARATOR --- */
+.or-divider {
+    display: flex;
+    align-items: center;
+    text-align: center;
+    margin: 25px 0;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    font-weight: 600;
+    letter-spacing: 1px;
+}
+.or-divider::before, .or-divider::after {
+    content: '';
+    flex: 1;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+.or-divider:not(:empty)::before { margin-right: 15px; }
+.or-divider:not(:empty)::after { margin-left: 15px; }
+.history-card:hover {
+    background: rgba(255, 255, 255, 0.06);
+    transform: translateY(-3px);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+    border-color: var(--accent);
+}
+
+.history-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+}
+
+.delete-btn {
+    background: rgba(239, 68, 68, 0.1);
+    color: #fca5a5;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin-left: 15px;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 0.9rem;
+}
+
+.delete-btn:hover {
+    background: var(--danger);
+    color: white;
+}
+
+
+
+        /* --- SCROLLBAR --- */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+
+.sidebar {
+    width: 260px; 
+    background: var(--bg-panel);
+    backdrop-filter: blur(25px);
+    -webkit-backdrop-filter: blur(25px);
+    border-right: var(--glass-border);
+    padding: 20px 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    z-index: 100;
+    transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1); /* Smooth Slide */
+    position: relative;
+    overflow: hidden; /* Hides text when shrinking */
+}
+
+/* Collapsed State (Icons Only) */
+.sidebar.collapsed {
+    width: 80px; 
+    padding: 20px 10px;
+}
+
+/* Hide Text/Brand labels when collapsed */
+.sidebar.collapsed .brand-text,
+.sidebar.collapsed .nav-item span,
+.sidebar.collapsed .toggle-text {
+    opacity: 0;
+    pointer-events: none;
+    display: none;
+}
+
+.sidebar.collapsed .nav-item {
+    justify-content: center; /* Center icons */
+    padding: 14px 0;
+}
+
+.sidebar.collapsed .brand {
+    justify-content: center;
+    padding-left: 0;
+}
+
+.nav-toggle-btn {
+    background: transparent; /* No background box */
+    border: none;
+    color: var(--text-muted);
+    font-size: 1.2rem;
+    cursor: pointer;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: all 0.3s;
+}
+.sidebar.collapsed .brand-logo-container span {
+    display: none; /* Hide Text "Sahayak.ai" */
+}
+
+.sidebar.collapsed .brand {
+    justify-content: center; /* Center the icons when closed */
+    padding: 0;
+}
+
+.sidebar.collapsed .brand-logo-container i {
+    display: none; /* Hide Logo Icon when closed (optional, or keep it) */
+}
+
+/* If you want the logo GONE and only the hamburger when closed: */
+.sidebar.collapsed .brand-logo-container {
+    display: none;
+}
+.nav-toggle-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+}
+.brand {
+    font-size: 1.4rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: space-between; /* Pushes button to right, logo to left */
+    color: var(--text-main);
+    margin-bottom: 30px;
+    padding: 0 5px;
+    width: 100%;
+    box-sizing: border-box;
+}
+.brand-logo-container {
+    display: flex;
+    flex-direction: column; /* Stacks Image on top of Text */
+    align-items: center;    /* Centers them horizontally */
+    justify-content: center;
+    gap: 6px;               /* Space between image and text */
+    padding: 15px 0;        /* Adds breathing room */
+    width: 100%;            /* Ensures it centers in the sidebar */
+}
+/* Bigger Text */
+.brand-text {
+    font-size: 1.3rem !important; /* Increased font size */
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-align: center;
+    color: var(--text-main);
+    display: block !important;
+}
+.brand-logo-container img {
+    height: 65px !important; /* Increased from 32px */
+    width: auto;
+    object-fit: contain;
+    filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.4)); /* Optional Glow */
+}
+.brand i { font-size: 1.8rem; filter: drop-shadow(0 0 10px var(--accent-glow)); }
+.nav-menu {
+    list-style: none;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 15px; /* Spacing between items */
+    width: 100%;
+}
+
+.nav-item {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    padding: 14px 20px;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    font-weight: 500;
+    gap: 15px;
+    white-space: nowrap;
+    box-sizing: border-box;
+}
+
+.nav-item:hover { background: rgba(255, 255, 255, 0.05); color: var(--text-main); }
+.nav-item.active {
+    background: linear-gradient(90deg, rgba(59, 130, 246, 0.15), transparent);
+    color: var(--accent);
+    border-left: 3px solid var(--accent);
+}
+#section-form .header-title {
+    display: flex;
+    flex-direction: column;
+    align-items: center !important;
+    justify-content: center !important;
+    text-align: center !important;
+    width: 100%;
+}
+
+#section-form .header-title h2 {
+    display: flex;
+    align-items: center;
+    justify-content: center !important; /* Forces the text/icon to center */
+    width: 100%;
+    margin: 0 auto; /* Ensures the element box is centered */
+}
+.nav-item i { font-size: 1.2rem; min-width: 24px; text-align: center; }
+#btn-vis-analyze {
+    margin-top: 30px !important;
+    padding: 16px 40px !important;
+    width: 100%; 
+    max-width: 350px; /* Constraint */
+    font-size: 1.1rem;
+    letter-spacing: 0.5px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+    align-self: center; /* Flex centering */
+}
+
+/* 2. Center Upload in Smart Data Entry (PC View) */
+#section-form .file-upload-wrapper {
+    margin: 25px auto !important; /* Force Center Alignment */
+    max-width: 500px;
+}
+.nav-item i { font-size: 1.1rem; width: 20px; text-align: center; }
+        /* --- MAIN DASHBOARD --- */
+        .main-content {
+            flex: 1;
+            padding: 40px 60px;
+            overflow-y: auto;
+            position: relative;
+        }
+
+        .header-title {
+            margin-bottom: 40px;
+        }
+        .header-title h2 { 
+            margin: 0; 
+            font-weight: 500; 
+            font-size: 2.2rem; 
+            letter-spacing: -0.5px;
+            background: linear-gradient(to right, #fff, #94a3b8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            filter: drop-shadow(0 2px 10px rgba(0,0,0,0.2));
+        }
+        .header-title p { margin: 8px 0 0; color: var(--text-muted); font-weight: 300; }
+
+        /* SECTIONS & CARDS */
+        .dashboard-section { display: none; animation: fadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1); }
+        .dashboard-section.active { display: block; }
+
+        .glass-card {
+            background: var(--glass-surface);
+            /* Strong blur to distort the new complex background */
+            backdrop-filter: blur(30px);
+            -webkit-backdrop-filter: blur(30px);
+            border: var(--glass-border);
+            border-top: 1px solid rgba(255,255,255,0.12);
+            border-radius: var(--radius);
+            padding: 40px;
+            box-shadow: var(--glass-shadow);
+            margin-bottom: 30px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .glass-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+        }
+
+        /* --- FORM ELEMENTS --- */
+        .input-group { margin-bottom: 25px; }
+        .input-group label { 
+            display: block; 
+            margin-bottom: 12px; 
+            font-weight: 400; 
+            font-size: 0.85rem; 
+            color: var(--primary); 
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+select {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%233b82f6%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
+    background-repeat: no-repeat;
+    background-position: right 20px center;
+    background-size: 12px auto;
+    padding-right: 40px; /* Space for the arrow */
+    cursor: pointer;
+}
+        textarea, select {
+            width: 100%;
+            padding: 18px;
+            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            /* darker, more transparent input background */
+            background: rgba(0, 0, 0, 0.25);
+            font-family: 'Inter', sans-serif;
+            font-size: 1rem;
+            color: var(--text-main);
+            outline: none;
+            transition: all 0.3s;
+            box-sizing: border-box;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.3);
+            
+        }
+        
+        textarea::placeholder, select { color: rgba(255,255,255,0.3); }
+        
+        textarea:focus, select:focus { 
+            border-color: var(--accent); 
+            background: rgba(0, 0, 0, 0.4); 
+            box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.2); 
+        }
+        
+        select option { background: #181a20; color: white; }
+.file-upload-wrapper {
+    border: 2px dashed var(--primary-color);
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+    cursor: pointer;
+    position: relative;
+    background: #F8FAFF;
+    transition: all 0.3s ease;
+    /* Changed/Added properties below */
+    min-height: 150px; /* Minimum starting height */
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden; /* Ensure image doesn't bleed out borders */
+}
+/* Add this new rule below .file-upload-wrapper */
+.file-upload-wrapper.has-file {
+    min-height: 300px; /* Gets taller when file exists */
+    max-height: 60vh;  /* Cap height so it doesn't fill screen completely */
+    justify-content: flex-start; /* Align content to top */
+    padding: 15px;
+    border-style: solid; /* Optional: make border solid when filled */
+}
+/* Replace existing #docPreview rule */
+#docPreview {
+    display: none;
+    /* Updated properties below */
+    width: 100%;
+    height: auto;
+    max-height: calc(60vh - 60px); /* Fit within wrapper */
+    object-fit: contain;
+    margin-top: 15px;
+    border-radius: 8px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+}
+/* Replace existing .file-upload-wrapper:hover rule */
+.file-upload-wrapper:not(.has-file):hover {
+    background: #EBF1FF;
+    border-color: #4A90E2;
+}
+#interaction-container {
+    width: 100%;
+    max-width: 500px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+        .btn-professional {
+    background: linear-gradient(135deg, #3b82f6, #2563eb); /* Professional Blue */
+    color: white;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    box-shadow: 0 4px 15px rgba(37, 99, 235, 0.4);
+    width: auto;
+    min-width: 180px;
+    justify-content: center;
+}
+.btn-professional:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(37, 99, 235, 0.6);
+}
+        .file-upload-wrapper:hover { 
+            border-color: var(--accent); 
+            background: rgba(249, 115, 22, 0.04); 
+        }
+        .file-upload-wrapper i { font-size: 2rem; color: var(--text-muted); margin-bottom: 15px; display: block; }
+        .file-upload-wrapper input { 
+            position: absolute; width: 100%; height: 100%; top: 0; left: 0; opacity: 0; cursor: pointer; 
+        }
+
+        /* BUTTONS */
+        .btn-row { display: flex; gap: 15px; margin-top: 30px; }
+        
+        .btn {
+            border: none;
+            padding: 14px 32px;
+            border-radius: 50px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            letter-spacing: 0.5px;
+        }
+        .btn:hover { transform: translateY(-2px); filter: brightness(1.2); }
+
+        .btn-primary { 
+            background: rgba(255,255,255,0.1); 
+            color: white; 
+            border: 1px solid rgba(255,255,255,0.08);
+            backdrop-filter: blur(10px);
+        }
+        
+       .btn-accent { 
+    background: #3b82f6; /* Single Professional Blue */
+    color: white; 
+    box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4); /* Soft blue glow */
+    transition: all 0.3s ease;
+}
+
+.btn-accent:hover {
+    background: #2563eb; /* Slightly darker blue on hover */
+    box-shadow: 0 6px 20px rgba(59, 130, 246, 0.6);
+    transform: translateY(-2px);
+}
+        
+        .btn-record { 
+            background: rgba(239, 68, 68, 0.1); 
+            color: #fca5a5; 
+            border: 1px solid rgba(239, 68, 68, 0.3); 
+        }
+  .btn-record.recording { 
+    background: linear-gradient(135deg, #0ea5e9, #3b82f6); /* Cyan-Blue Gradient */
+    color: white; 
+    border: 1px solid #3b82f6;
+    box-shadow: 0 0 25px rgba(59, 130, 246, 0.6); /* Blue Glow */
+    animation: pulseBlue 2s infinite; 
+}
+@keyframes pulseBlue { 
+    0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); } 
+    70% { box-shadow: 0 0 0 15px rgba(59, 130, 246, 0); } 
+    100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); } 
+}
+        /* RESULTS */
+        .result-widget {
+            display: none;
+            margin-top: 30px;
+            padding: 25px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-left: 4px solid var(--accent);
+            backdrop-filter: blur(10px);
+        }
+        .result-row { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .result-row:last-child { border-bottom: none; }
+        .label { color: var(--text-muted); font-size: 0.9rem; }
+        .value { font-weight: 500; text-align: right; color: white; }
+        
+        .ai-message { 
+            background: rgba(255,255,255,0.03); 
+            padding: 20px; 
+            border-radius: 12px; 
+            margin-top: 20px; 
+            font-style: normal; 
+            color: var(--text-main); 
+            line-height: 1.6;
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); } 70% { box-shadow: 0 0 0 15px rgba(239, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }
+
+        /* MOBILE */
+/* --- MOBILE OPTIMIZATION (FINAL) --- */
+@media (max-width: 768px) {
+    body { 
+        flex-direction: column; 
+        height: auto; 
+        overflow-y: auto; 
+    }
+
+    /* 1. Sidebar becomes Top Header */
+    .sidebar {
+        flex-direction: row !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        width: 100% !important;
+        height: 60px !important;              /* Compact Header */
+        padding: 0 15px !important;
+        position: fixed !important;           /* Sticky Top */
+        top: 0; left: 0;
+        z-index: 1000;
+        background: rgba(20, 25, 30, 0.95);
+        backdrop-filter: blur(15px);
+        border-right: none !important;
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+        gap: 0 !important;
+    }
+
+    /* 2. Compact Logo */
+    .brand {
+        width: auto !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: none !important;
+        flex-shrink: 0;
+    }
+    .brand-logo-container {
+        flex-direction: row !important;
+        align-items: center !important;
+        gap: 8px !important;
+        padding: 0 !important;
+        width: auto !important;
+    }
+    .brand-logo-container img {
+        height: 28px !important;
+    }
+    .brand-text {
+        font-size: 1rem !important;
+        display: block !important;
+    }
+    
+    .nav-toggle-btn { display: none !important; }
+
+    /* 3. Tiny Navigation Icons (Right aligned) */
+    .nav-menu {
+        flex-direction: row !important;
+        width: auto !important;
+        flex: unset !important;
+        margin: 0 !important;
+        gap: 2px !important;
+        justify-content: flex-end !important;
+    }
+    .nav-item {
+        padding: 8px !important;
+        border-radius: 8px !important;
+        min-width: 35px !important;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+    .nav-item span { display: none !important; } 
+    .nav-item i { 
+        font-size: 1rem !important; 
+        margin: 0 !important;
+    }
+
+    .lang-selector {
+        position: fixed !important;        /* Force fixed positioning */
+        top: auto !important;
+        bottom: 25px !important;           /* Space from bottom */
+        right: 20px !important;            /* Space from right */
+        left: auto !important;
+        
+        transform: scale(0.85);            /* Minimize size */
+        transform-origin: bottom right;
+        
+        width: fit-content !important;
+        display: flex;
+        gap: 5px;
+        z-index: 9999 !important;          /* Ensure it sits on top of everything */
+        
+        background: rgba(10, 15, 25, 0.95); /* Darker background for visibility */
+        padding: 5px;
+        border-radius: 50px;               /* Pill shape */
+        border: 1px solid rgba(59, 130, 246, 0.3);
+        box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+    }
+    
+    /* Optional: Make buttons slightly smaller */
+    .lang-btn {
+        padding: 6px 10px !important;
+        font-size: 0.7rem !important;
+    }
+
+    /* 5. Content Padding */
+    .main-content {
+        padding: 80px 20px 100px 20px !important; 
+    }
+} 
+/* --- NEW: Modern Toast Notification --- */
+#toast-container {
+    visibility: hidden;
+    min-width: 280px;
+    margin-left: -140px;
+    background: rgba(16, 185, 129, 0.9); /* Success Green by default */
+    backdrop-filter: blur(10px);
+    color: #fff;
+    text-align: center;
+    border-radius: 12px;
+    padding: 16px;
+    position: fixed;
+    z-index: 9999;
+    left: 50%;
+    top: 30px; /* Top position */
+    box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+    border: 1px solid rgba(255,255,255,0.2);
+    font-size: 0.95rem;
+    font-weight: 500;
+    opacity: 0;
+    transform: translateY(-20px);
+    transition: all 0.4s cubic-bezier(0.68, -0.55, 0.27, 1.55);
+}
+
+#toast-container.show {
+    visibility: visible;
+    opacity: 1;
+    transform: translateY(0);
+}
+#toast-container.error {
+    background: rgba(239, 68, 68, 0.9); /* Red for errors */
+}
+
+/* --- NEW: Save Box Styling --- */
+.save-box-container {
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 16px;
+    padding: 20px;
+    margin-top: 25px;
+    width: 100%; /* Force full width */
+    box-sizing: border-box; /* Ensures padding doesn't break width */
+}
+
+.modern-input {
+    width: 100%;
+    padding: 14px 16px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.05);
+    color: white;
+    font-size: 1rem;
+    outline: none;
+    transition: all 0.3s ease;
+    box-sizing: border-box; /* Critical for sizing */
+    margin-bottom: 15px;
+}
+
+.modern-input:focus {
+    background: rgba(0, 0, 0, 0.6);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+}
+</style>
+</head>
+
+<body>
+<div id="toast-container"><i class="fas fa-check-circle"></i> <span id="toast-msg">Success</span></div>
+<nav class="sidebar" id="mainSidebar">
+    <div class="brand">
+<div class="brand-logo-container">
+    <img src="/static/logo.png" alt="care shield" style="height: 40px; width: auto; object-fit: contain;">
+    
+    <span class="brand-text" style="font-size: 0.9rem; font-weight: 600;">care shield</span>
+</div>
+        <button class="nav-toggle-btn" onclick="toggleSidebar()">
+            <i class="fas fa-bars"></i>
+        </button>
+    </div>
+
+    <ul class="nav-menu">
+        <li class="nav-item active" onclick="switchTab('bio')">
+            <i class="fas fa-lungs-virus"></i> 
+            <span>Bio-Acoustics</span>
+        </li>
+        <li class="nav-item" onclick="switchTab('visual')">
+            <i class="fas fa-notes-medical"></i> 
+            <span>Visual Scanner</span>
+        </li>
+        <li class="nav-item" onclick="switchTab('form')">
+            <i class="fas fa-file-prescription"></i> 
+            <span>Smart Data Entry</span>
+        </li>
+    </ul>
+</nav>
+
+<main class="main-content">
+
+<div class="lang-selector">
+    <button class="lang-btn active" data-lang="en" onclick="changeLanguage('en', this)">EN</button>
+    <button class="lang-btn" data-lang="hi" onclick="changeLanguage('hi', this)">हिंदी</button>
+    <button class="lang-btn" data-lang="kn" onclick="changeLanguage('kn', this)">ಕನ್ನಡ</button>
+</div>
+<section id="section-bio" class="dashboard-section active">
+<div class="header-title" style="text-align: center;">
+    <h2>Bio-Acoustic Triage</h2>
+    <p>Advanced respiratory pattern detection system.</p>
+    
+    <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;">
+        <span style="background: rgba(255,255,255,0.05); padding: 6px 14px; border-radius: 20px; font-size: 0.8rem; border: 1px solid rgba(255,255,255,0.1); color: #cbd5e1;">
+            <i class="fas fa-lungs-virus" style="color: var(--accent); margin-right:6px;"></i> Pulmonary Health
+        </span>
+        <span style="background: rgba(255,255,255,0.05); padding: 6px 14px; border-radius: 20px; font-size: 0.8rem; border: 1px solid rgba(255,255,255,0.1); color: #cbd5e1;">
+            <i class="fas fa-wave-square" style="color: var(--accent); margin-right:6px;"></i> Cough Analysis
+        </span>
+        <span style="background: rgba(255,255,255,0.05); padding: 6px 14px; border-radius: 20px; font-size: 0.8rem; border: 1px solid rgba(255,255,255,0.1); color: #cbd5e1;">
+            <i class="fas fa-stethoscope" style="color: var(--accent); margin-right:6px;"></i> Triage Grading
+        </span>
+    </div>
+</div>
+    <div class="glass-card" style="max-width: 800px; margin: 0 auto; text-align: center;">    
+        <div class="bio-centered-container" style="align-items: center;">
+                    <div id="bio-visualizer" style="display: none; width: 100%; max-width: 400px; height: 60px; margin-bottom: 15px;"></div>
+
+        <button id="recordBtn" class="btn btn-record" style="width: 100%; max-width: 400px; height: 60px; font-size: 1.1rem; margin: 0 auto; justify-content: center;" onclick="toggleRecording()">
+            <i class="fas fa-microphone"></i> <span>Start Recording</span>
+        </button>
+
+        <div class="or-divider" style="width: 50%; max-width: 200px; margin: 15px auto;">OR</div>
+
+<div class="file-upload-wrapper" style="width: 100%; max-width: 400px; min-height: 120px; margin: 15px auto; background: rgba(15, 23, 42, 0.6); border: 1px dashed rgba(59, 130, 246, 0.3); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 20px; box-sizing: border-box;">
+    <i class="fas fa-cloud-upload-alt" style="font-size: 1.5rem; margin-bottom: 8px; color: var(--accent);"></i>
+    <span id="audioFileName" style="font-weight: 500; font-size: 0.85rem; color: #cbd5e1; max-width: 90%; overflow: hidden; text-overflow: ellipsis; display: block; margin: 0 auto;">Drop audio file here or click to browse</span>
+    <input type="file" id="audioInput" accept="audio/*" onchange="handleAudioSelect(this)" style="position: absolute; width: 100%; height: 100%; top: 0; left: 0; opacity: 0; cursor: pointer;">
+</div>
+    <div id="bio-context-stage" class="disabled-stage symptom-box-wrapper" style="max-width: 400px;">
+        <div class="input-group">
+            <label style="text-align: center; color: var(--accent);">
+                <i class="fas fa-notes-medical"></i> Patient Symptoms (Optional)
+            </label>
+            <textarea id="audioPrompt" rows="2" placeholder="Describe symptoms (e.g., 'Dry cough for 3 days')..."></textarea>
+        </div>
+
+        <button id="btn-bio-final" class="btn btn-accent" onclick="submitBioAnalysis()">
+            <i class="fas fa-wave-square"></i> Run Diagnosis
+        </button>
+    </div>
+</div>
+            <div id="result-box" class="result-widget">
+                <h4 style="margin: 0 0 15px 0; color: var(--text-main);">Diagnostic Report</h4>
+                <div class="result-row">
+                    <span class="label">Condition Detected</span>
+                    <span class="value" id="r-condition">--</span>
+                </div>
+                <div class="result-row">
+                    <span class="label">Category</span>
+                    <span class="value" id="r-type">--</span>
+                </div>
+                <div class="ai-message" id="r-analysis">
+                    Waiting for analysis...
+                </div>
+                <div style="margin-top: 15px; font-weight: 500; color: var(--accent);">
+                    <i class="fas fa-user-md"></i> <span id="r-action">Recommendation will appear here.</span>
+                </div>
+            </div>
+        </section>
+
+<section id="section-visual" class="dashboard-section">
+<div class="header-title" style="text-align: center;"> 
+    <h2>Visual Health Scanner</h2>
+    <p>AI-powered Clinical Analysis: Medicine, Wounds & Nutrition.</p>
+
+    <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;">
+        <span style="background: rgba(255,255,255,0.05); padding: 6px 14px; border-radius: 20px; font-size: 0.8rem; border: 1px solid rgba(255,255,255,0.1); color: #cbd5e1;">
+            <i class="fas fa-capsules" style="color: var(--accent); margin-right:6px;"></i> Pharmacology
+        </span>
+        <span style="background: rgba(255,255,255,0.05); padding: 6px 14px; border-radius: 20px; font-size: 0.8rem; border: 1px solid rgba(255,255,255,0.1); color: #cbd5e1;">
+            <i class="fas fa-user-injured" style="color: var(--accent); margin-right:6px;"></i> Dermatology
+        </span>
+        <span style="background: rgba(255,255,255,0.05); padding: 6px 14px; border-radius: 20px; font-size: 0.8rem; border: 1px solid rgba(255,255,255,0.1); color: #cbd5e1;">
+            <i class="fas fa-carrot" style="color: var(--accent); margin-right:6px;"></i> Dietetics
+        </span>
+    </div>
+</div>    <div class="glass-card visual-theme-card" style="max-width: 800px; margin: 0 auto; border: 1px solid rgba(59, 130, 246, 0.3); background: rgba(30, 41, 59, 0.4);">
+        
+        <div id="vis-state-upload" class="scanner-state">
+            <div class="input-group" style="width: 100%; max-width: 400px;">
+                <label style="color: #60a5fa;">Select Scanner Mode</label> 
+                <select id="scanType" onchange="updatePromptPlaceholder()">
+                    <option value="medicine">Medicine Interaction & Safety</option>
+                    <option value="wound">Skin, Infection & Symptom Scanner</option>
+                    <option value="nutrition">Nutrition & Diet Analysis</option>
+                </select>
+            </div>
+
+            <div class="input-group" style="width: 100%; max-width: 400px;">
+                <textarea id="visionPrompt" rows="2" placeholder="e.g., 'I have a headache, is this safe to take?'"></textarea>
+            </div>
+
+<div class="file-upload-wrapper" style="width: 100%; max-width: 400px; min-height: 160px; border: 1px dashed rgba(59, 130, 246, 0.3); background: rgba(15, 23, 42, 0.6);">
+    <i class="fas fa-camera" style="color: #60a5fa;"></i> 
+    <span id="visionFileName" style="color: #cbd5e1;">Upload Clinical Image(s)</span>
+    
+    <input type="file" id="medInput" accept="image/*" onchange="handleVisualUpload(this)">
+    <div id="preview-grid" style="display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin-top: 15px;"></div>
+</div>
+
+            <button id="btn-vis-analyze" class="btn btn-professional" style="background: linear-gradient(135deg, #3b82f6, #2563eb); box-shadow: 0 4px 15px rgba(37, 99, 235, 0.4); margin-top: 15px;" onclick="analyzeVision()">
+                <i class="fas fa-search-plus"></i> Analyze Scan
+            </button>
+        </div>
+        
+        <div id="vis-state-scanning" class="scanner-state hidden-state">
+    <div class="scan-grid"></div>
+    <div class="scan-line"></div>
+    <div id="scan-image-container"></div>
+    
+    <p id="scan-status-text">INITIALIZING BIO-SCAN...</p>
+</div>
+
+        <div id="vis-state-result" class="scanner-state hidden-state">
+            <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 15px;">
+                <div>
+                    <span class="med-tag" id="res-tag-type">SCAN COMPLETE</span>
+                    <h3 id="res-main-alert" style="margin: 5px 0 0 0; font-size: 1.5rem;">--</h3>
+                </div>
+                <button class="btn btn-primary" style="padding: 8px 15px; font-size: 0.8rem;" onclick="resetVisualScanner()">
+                    <i class="fas fa-redo"></i> Scan Another
+                </button>
+            </div>
+
+            <div id="vis-dynamic-content">
+                </div>
+        </div>
+
+    </div>
+</section><section id="section-form" class="dashboard-section">
+<div class="header-title header-centered-force" style="text-align: center;">
+    <h2 style="margin: 0; padding: 0;">
+        <i class="fas fa-keyboard header-icon"></i> Smart Data Entry
+    </h2>
+    <p style="margin-top: 10px;">Multilingual, Context-Aware Form Completion</p>
+
+    <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;">
+        <span style="background: rgba(255,255,255,0.05); padding: 6px 14px; border-radius: 20px; font-size: 0.8rem; border: 1px solid rgba(255,255,255,0.1); color: #cbd5e1;">
+            <i class="fas fa-microphone-lines" style="color: var(--accent); margin-right:6px;"></i> Voice Dictation
+        </span>
+        <span style="background: rgba(255,255,255,0.05); padding: 6px 14px; border-radius: 20px; font-size: 0.8rem; border: 1px solid rgba(255,255,255,0.1); color: #cbd5e1;">
+            <i class="fas fa-file-contract" style="color: var(--accent); margin-right:6px;"></i> Optical Recognition
+        </span>
+        <span style="background: rgba(255,255,255,0.05); padding: 6px 14px; border-radius: 20px; font-size: 0.8rem; border: 1px solid rgba(255,255,255,0.1); color: #cbd5e1;">
+            <i class="fas fa-language" style="color: var(--accent); margin-right:6px;"></i> Multi-Language
+        </span>
+    </div>
+</div>
+
+    <div class="glass-card bluish-glass slide-up-fade" style="max-width: 800px; margin: 0 auto; padding: 40px;">
+        
+        <div id="interaction-container" class="interaction-wrapper" style="border-top: none; margin-top: 0; padding-top: 0;">
+            
+            <div id="doc-mode-label" class="mode-label" style="color: var(--accent);">
+                <i class="fas fa-robot"></i> AI Ready: Answer via Voice or Fill Manually
+            </div>
+
+            <div class="action-controls">
+                <button id="formRecordBtn" class="btn btn-accent btn-compact" onclick="toggleFormRecording()">
+                    <i class="fas fa-microphone"></i> <span>Answer via Voice</span>
+                </button>
+                
+                <span class="or-text" style="color: #60a5fa; opacity: 0.7;">&mdash; OR &mdash;</span>
+
+                <button id="toggleTextBtn" class="btn btn-primary btn-compact" style="background: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.3);" onclick="toggleTextPanel()">
+                    <i class="fas fa-keyboard"></i> <span>Fill from Text</span>
+                </button>
+            </div>
+            <div id="dictation-ui" class="dictation-surface">
+                <div class="transcript-history">
+                    <span class="history-line" style="color: #94a3b8;">Tap "Answer via Voice" to start recording</span>
+                </div>
+                <div class="active-line-wrapper">
+                    <span id="live-text" class="active-line-text" style="color: white;">Ready for voice input</span>
+                </div>
+                <div id="clinical-wave" class="clinical-visualizer">
+                    <div class="clinical-bar"></div><div class="clinical-bar"></div>
+                    <div class="clinical-bar"></div><div class="clinical-bar"></div>
+                    <div class="clinical-bar"></div><div class="clinical-bar"></div>
+                </div>
+            </div>
+
+            <div id="text-only-panel" class="input-group" style="display: none; animation: fadeIn 0.3s ease; margin-top: 20px;">
+                <textarea id="textInstruction" rows="2" placeholder="Type details here (e.g., 'My name is Aryan, born 2005...')..." 
+                          style="margin-bottom: 10px; background: rgba(10, 15, 25, 0.6); border-color: rgba(59, 130, 246, 0.3);"></textarea>
+                <button class="btn btn-primary" style="width:100%; justify-content:center; padding: 10px; background: rgba(59, 130, 246, 0.2); color: #60a5fa;" onclick="processTextOnly()">
+                    <i class="fas fa-paper-plane"></i> Submit Data
+                </button>
+            </div>
+        </div>
+
+        <div id="default-separators">
+            <div class="or-divider" style="margin-top: 30px; color: rgba(59, 130, 246, 0.5);">OPTIONAL: REFERENCE DOCUMENT</div>
+        </div>
+<div class="file-upload-wrapper bluish-glass" style="padding: 20px; justify-content: center; min-height: 120px; height: auto; transition: all 0.3s ease; border: 1px dashed rgba(59, 130, 246, 0.4); background: rgba(255, 255, 255, 0.01);">
+    <i class="fas fa-file-pdf" style="font-size: 2rem; margin-bottom: 8px; color: var(--accent);"></i>
+    <span id="formDocName" style="font-size: 0.9rem; color: #cbd5e1;">Upload Form Image/PDF (Mode 2)</span>
+    <input type="file" id="formDocInput" onchange="handleDocUpload(this)">
+    
+    <img id="form-upload-preview" style="display:none; width: 100%; max-height: 450px; object-fit: contain; border-radius: 12px; margin-top: 15px; border: 1px solid rgba(59, 130, 246, 0.2); background: transparent;">
+    
+    <div id="doc-mount-point" style="width: 100%; margin-top: 20px;"></div>
+</div>
+        </div>
+
+    </div>
+
+    <div class="result-widget" id="form-result-box" style="display: block; border-left: none; background: transparent;">
+        <div id="confirmation-msg" style="margin-bottom: 20px; color: var(--success); font-weight: 600; font-size: 1.1rem; text-align: center;"></div>
+        <div id="data-cards"></div>
+        <div id="preview-container" class="glass-card" style="padding: 10px; display: none; margin-top: 20px;">
+            <h4 style="margin: 0 0 10px 0; color: var(--primary); font-size: 0.8rem;">Document Preview</h4>
+            <img id="form-preview-img" src="" style="max-height: 60vh; width: auto; max-width: 100%; display: block; margin: 0 auto; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1);">
+        </div> 
+        <div id="history-section" style="margin-top: 30px;"></div>
+    </div>
+</section>
+</main>
+    <script>
+let currentLang = 'en';
+let currentBioData = null; // Store Bio result temporarily
+let currentVisualData = null; // Store Visual result temporarily
+const translations = {
+    en: {
+        nav_bio: "Bio-Acoustics", nav_vis: "Visual Scanner", nav_form: "Smart Data Entry",
+        bio_h: "Bio-Acoustic Triage", bio_p: "Advanced respiratory pattern detection system.",
+        vis_h: "Visual Health Scanner", vis_p: "AI-powered Clinical Analysis: Medicine, Wounds & Nutrition.",
+        form_h: "Smart Data Entry", form_p: "Multilingual, Context-Aware Form Completion",
+        tags: ["Pulmonary Health", "Cough Analysis", "Triage Grading", "Pharmacology", "Dermatology", "Dietetics", "Voice Dictation", "Optical Recognition", "Multi-Language"],
+        btns: { record: "Start Recording", analyze: "Analyze Scan", voice: "Answer via Voice", text: "Fill from Text" },
+        placeholders: { symptoms: "Describe symptoms...", query: "e.g., 'Can I take these pills?'", entry: "Type details here..." },
+        upload: { bio: "Drop audio file here", vis: "Upload Clinical Image(s)", form: "Upload Form Image/PDF" }
+    },
+    hi: {
+        nav_bio: "बायो-अकॉस्टिक्स", nav_vis: "विजुअल स्कैनर", nav_form: "स्मार्ट डेटा एंट्री",
+        bio_h: "बायो-अकॉस्टिक ट्राइएज", bio_p: "उन्नत श्वसन पैटर्न पहचान प्रणाली।",
+        vis_h: "विजुअल हेल्थ स्कैनर", vis_p: "AI-संचालित नैदानिक विश्लेषण: दवा, घाव और पोषण।",
+        form_h: "स्मार्ट डेटा एंट्री", form_p: "बहुभाषी, संदर्भ-जागरूक फॉर्म पूर्णता",
+        tags: ["फेफड़ों का स्वास्थ्य", "खांसी विश्लेषण", "ट्राइएज ग्रेडिंग", "औषध विज्ञान", "त्वचाविज्ञान", "आहार विज्ञान", "आवाज श्रुतलेख", "ऑप्टिकल पहचान", "बहु-भाषा"],
+        btns: { record: "रिकॉर्डिंग शुरू करें", analyze: "स्कैन का विश्लेषण करें", voice: "आवाज से उत्तर दें", text: "टेक्स्ट से भरें" },
+        placeholders: { symptoms: "लक्षणों का वर्णन करें...", query: "जैसे, 'क्या मैं ये गोलियां ले सकता हूं?'", entry: "यहां विवरण टाइप करें..." },
+        upload: { bio: "ऑडियो फ़ाइल यहाँ डालें", vis: "क्लिनिकल इमेज अपलोड करें", form: "फॉर्म इमेज अपलोड करें" }
+    },
+    kn: {
+        nav_bio: "ಬಯೋ-ಅಕೌಸ್ಟಿಕ್ಸ್", nav_vis: "ವಿಷುವಲ್ ಸ್ಕ್ಯಾನರ್", nav_form: "ಸ್ಮಾರ್ಟ್ ಡೇಟಾ ಎಂಟ್ರಿ",
+        bio_h: "ಬಯೋ-ಅಕೌಸ್ಟಿಕ್ ಟ್ರಯಾಜ್", bio_p: "ಸುಧಾರಿತ ಉಸಿರಾಟದ ಮಾದರಿ ಪತ್ತೆ ವ್ಯವಸ್ಥೆ.",
+        vis_h: "ವಿಷುವಲ್ ಹೆಲ್ತ್ ಸ್ಕ್ಯಾನರ್", vis_p: "AI-ಚಾಲಿತ ಕ್ಲಿನಿಕಲ್ ವಿಶ್ಲೇಷಣೆ: ಔಷಧಿ, ಗಾಯಗಳು ಮತ್ತು ಪೋಷಣೆ.",
+        form_h: "ಸ್ಮಾರ್ಟ್ ಡೇಟಾ ಎಂಟ್ರಿ", form_p: "ಬಹುಭಾಷಾ ಡೇಟಾ ಎಂಟ್ರಿ ಸಿಸ್ಟಮ್",
+        tags: ["ಶ್ವಾಸಕೋಶದ ಆರೋಗ್ಯ", "ಕೆಮ್ಮಿನ ವಿಶ್ಲೇಷಣೆ", "ಟ್ರಯಾಜ್ ಗ್ರೇಡಿಂಗ್", "ಫಾರ್ಮಕಾಲಜಿ", "ಚರ್ಮರೋಗ", "ಡಯೆಟಿಟಿಕ್ಸ್", "ಧ್ವನಿ ಡಿಕ್ಟೇಶನ್", "ಆಪ್ಟಿಕಲ್ ರೆಕಗ್ನಿಷನ್", "ಬಹು-ಭಾಷೆ"],
+        btns: { record: "ರೆಕಾರ್ಡಿಂಗ್ ಪ್ರಾರಂಭಿಸಿ", analyze: "ವಿಶ್ಲೇಷಣೆ ಮಾಡಿ", voice: "ಧ್ವನಿ ಮೂಲಕ ಉತ್ತರಿಸಿ", text: "ಪಠ್ಯದ ಮೂಲಕ ತುಂಬಿ" },
+        placeholders: { symptoms: "ರೋಗಲಕ್ಷಣಗಳನ್ನು ವಿವರಿಸಿ...", query: "ಉದಾ: 'ನಾನು ಈ ಮಾತ್ರೆಗಳನ್ನು ತೆಗೆದುಕೊಳ್ಳಬಹುದೇ?'", entry: "ವಿವರಗಳನ್ನು ಇಲ್ಲಿ ಟೈಪ್ ಮಾಡಿ..." },
+        upload: { bio: "ಆಡಿಯೊ ಫೈಲ್ ಇಲ್ಲಿ ಹಾಕಿ", vis: "ಚಿತ್ರವನ್ನು ಅಪ್‌ಲೋಡ್ ಮಾಡಿ", form: "ಫಾರ್ಮ್ ಅಪ್‌ಲೋಡ್ ಮಾಡಿ" }
+    }
+};
+
+async function changeLanguage(langCode, btn) {
+    // 1. UI Setup
+    document.querySelectorAll('.lang-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    window.currentLang = langCode;
+    localStorage.setItem('user_lang', langCode);
+
+    if (langCode === 'en') {
+        location.reload(); // Reset to original English
+        return;
+    }
+
+    // 2. Find all translatable elements
+    // We target headings, paragraphs, spans, and buttons
+    const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+    let node;
+    const textNodes = [];
+    const rawTexts = [];
+
+    while(node = walk.nextNode()) {
+        const parent = node.parentElement.tagName.toLowerCase();
+        const text = node.nodeValue.trim();
+        // Skip scripts, styles, and empty lines
+        if (text.length > 1 && parent !== 'script' && parent !== 'style') {
+            textNodes.push(node);
+            rawTexts.push(text);
+        }
+    }
+
+    // 3. Show loading state
+    const originalBtnText = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+    try {
+        // 4. Send to Amazon Translate via our Backend
+        const response = await fetch('/translate_ui_bulk', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ texts: rawTexts, target_lang: langCode })
+        });
+        
+        const data = await response.json();
+
+        // 5. Replace text in the DOM
+        if (data.translated_texts) {
+            data.translated_texts.forEach((translatedText, i) => {
+                textNodes[i].nodeValue = " " + translatedText + " ";
+            });
+        }
+    } catch (e) {
+        console.error("Translation Failed:", e);
+    } finally {
+        btn.innerHTML = originalBtnText;
+    }
+}
+        let selectedFiles = [];          
+        let formDataStore = {}; // Holds the building JSON
+        let currentDocUrl = "";
+async function processTextOnly() {
+    const text = document.getElementById('textInstruction').value;
+    if(!text) return alert("Please type instructions first.");
+    
+    // Check if a file is attached (Mode 2 vs Mode 1)
+    const docInput = document.getElementById('formDocInput');
+    const hasFile = docInput && docInput.files.length > 0;
+    
+    // Send to main processor (it handles file check internally)
+    processFormVoice(null, text); 
+}
+// --- FORM VOICE RECORDING (Restored) ---
+        async function toggleFormRecording() {
+    const btn = document.getElementById('formRecordBtn');
+    const voicePanel = document.getElementById('dictation-ui');
+    const textPanel = document.getElementById('text-only-panel');
+    const liveText = document.getElementById('live-text'); // The Text element
+    const waveContainer = document.getElementById('clinical-wave'); // The Wave element
+    const textToggleBtn = document.getElementById('toggleTextBtn');
+
+    if (!isRecording) {
+        // 1. START RECORDING
+        textToggleBtn.disabled = true;
+        textToggleBtn.style.opacity = "0.5";
+        textPanel.style.display = 'none';
+        textToggleBtn.innerHTML = '<i class="fas fa-keyboard"></i> <span>Fill from Text</span>';
+
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+            audioChunks = [];
+
+            // UI Updates: HIDE TEXT, SHOW WAVE
+            voicePanel.style.display = 'flex';
+            liveText.style.display = 'none'; // Hide "Listening..."
+            
+            // Start The Scrolling Wave
+            startScrollingWave(stream, 'clinical-wave');
+
+            mediaRecorder.ondataavailable = event => audioChunks.push(event.data);
+            
+            mediaRecorder.onstop = () => {
+                // STOP Wave, Show Processing Text
+                stopScrollingWave('clinical-wave');
+                liveText.style.display = 'block'; // Bring text back
+                liveText.innerHTML = "<i class='fas fa-cog fa-spin'></i> Processing...";
+                
+                const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                processFormVoice(audioBlob, ""); 
+                
+                textToggleBtn.disabled = false;
+                textToggleBtn.style.opacity = "1";
+            };
+
+            mediaRecorder.start();
+            isRecording = true;
+
+            btn.classList.add('recording');
+            btn.innerHTML = '<i class="fas fa-stop-circle"></i> <span>Stop Recording</span>';
+
+        } catch (err) {
+            alert("Microphone Error: " + err.message);
+            textToggleBtn.disabled = false;
+            textToggleBtn.style.opacity = "1";
+        }
+    } else {
+        // 2. STOP RECORDING
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+            mediaRecorder.stop();
+        }
+        isRecording = false;
+        btn.classList.remove('recording');
+        btn.innerHTML = '<i class="fas fa-microphone"></i> <span>Answer via Voice</span>';
+    }
+}
+function showToast(message, isError = false) {
+    const x = document.getElementById("toast-container");
+    const msg = document.getElementById("toast-msg");
+    const icon = x.querySelector("i");
+    
+    msg.innerText = message;
+    
+    if (isError) {
+        x.className = "error show";
+        icon.className = "fas fa-exclamation-circle";
+    } else {
+        x.className = "show";
+        icon.className = "fas fa-check-circle";
+    }
+
+    setTimeout(function(){ x.className = x.className.replace("show", ""); }, 3000);
+}
+// --- UPDATED SCROLLING WAVE VISUALIZER (Fixes PC Width Issue) ---
+let scrollInterval;
+let scrollContext, scrollAnalyser, scrollSource;
+
+function startScrollingWave(stream, containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    
+    container.innerHTML = ""; 
+    container.className = "scrolling-wave"; 
+    container.style.display = "flex";
+
+    if (!scrollContext) scrollContext = new (window.AudioContext || window.webkitAudioContext)();
+    scrollAnalyser = scrollContext.createAnalyser();
+    scrollAnalyser.fftSize = 64; 
+    scrollAnalyser.smoothingTimeConstant = 0.5;
+    
+    scrollSource = scrollContext.createMediaStreamSource(stream);
+    scrollSource.connect(scrollAnalyser);
+    
+    const dataArray = new Uint8Array(scrollAnalyser.frequencyBinCount);
+
+    scrollInterval = setInterval(() => {
+        scrollAnalyser.getByteFrequencyData(dataArray);
+        
+        // 1. Calculate Loudness
+        let sum = 0;
+        for(let i = 2; i < 20; i++) sum += dataArray[i];
+        let average = sum / 18;
+
+        // 2. Sensitivity Boost
+        let baseHeight = average < 5 ? 4 : (average / 255) * 150; 
+        
+        // 3. Voice Texture (Randomness)
+        let variation = Math.random() * 0.8 + 0.6; 
+        let finalHeight = Math.min(60, Math.max(4, baseHeight * variation));
+
+        const bar = document.createElement('div');
+        bar.classList.add('wave-bar-scroll');
+        bar.style.height = `${finalHeight}px`;
+        bar.style.opacity = average < 10 ? 0.5 : 1;
+
+        container.appendChild(bar);
+
+        // --- FIX IS HERE ---
+        // Calculate limit dynamically based on CURRENT width (12px = bar width + gap)
+        // We add +2 extra bars to ensure no visible gap at the edge
+        const currentMaxBars = Math.floor(container.clientWidth / 12) + 2;
+
+        // Only remove bars if we exceed the CURRENT visual limit
+        while (container.children.length > currentMaxBars) {
+            container.removeChild(container.firstChild);
+        }
+    }, 50); 
+}
+function stopScrollingWave(containerId) {
+    if (scrollInterval) clearInterval(scrollInterval);
+    const container = document.getElementById(containerId);
+    if(container) {
+        container.style.display = 'none';
+        container.innerHTML = ''; // Clean up
+    }
+}
+async function processFormVoice(blob, textHint = "") {
+    const status = document.getElementById('confirmation-msg');
+    const docInput = document.getElementById('formDocInput');
+    const docFile = docInput ? docInput.files[0] : null;
+    
+    // UI Feedback
+    status.innerHTML = "<i class='fas fa-circle-notch fa-spin'></i> AI Extracting & Processing...";
+    
+    let fd = new FormData();
+    if(blob) fd.append("audio", blob, "response.wav");
+    if(textHint) fd.append("text_input", textHint); 
+    fd.append("language", window.currentLang); // Add this line here
+    
+    fd.append("mode", docFile ? "MODE_2" : "MODE_1");
+    if(docFile) fd.append("form_doc", docFile);
+
+    try {
+        let res = await fetch('/process_form_voice', { method: "POST", body: fd });
+        if (!res.ok) throw new Error(`Server Error: ${res.status}`);
+        
+        let data = await res.json();
+        
+        // Reset Logic
+        currentDocUrl = ""; 
+        const cardContainer = document.getElementById('data-cards');
+        
+        // --- LAYOUT FIX: Insert Image INSIDE this card ---
+        // --- LAYOUT UPDATE: MODERN SAVE BOX IN FOOTER ---
+        cardContainer.innerHTML = `
+            <div id="active-session-card" class="glass-card" style="padding: 25px; border: 1px solid var(--accent);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                    <h3 style="margin:0; font-size: 1.1rem; color: var(--accent);">
+                        ${docFile ? 'Document Ready' : 'Captured Data'}
+                    </h3>
+                    <a id="download-link" href="#" download style="display:none; color: var(--accent); font-size: 0.9rem; text-decoration: none;">
+                         <i class="fas fa-download"></i> Download Image
+                    </a>
+                </div>
+                
+                <div id="editable-grid" style="display: grid; grid-template-columns: 1fr; gap: 0;"></div>
+                
+                <div id="internal-preview-box" style="display:none; text-align:center; margin-top:10px; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px;">
+                    <img id="inner-form-img" src="" style="max-height: 65vh; max-width: 100%; border-radius: 4px; box-shadow: 0 5px 15px rgba(0,0,0,0.3);">
+                </div>
+
+                <div class="save-action-card">
+                    <div class="save-header">
+                        <i class="fas fa-file-signature" style="color: var(--accent);"></i> Finalize Entry
+                    </div>
+                    
+                    <div class="save-input-group">
+                        <input type="text" id="form-patient-name" class="save-input-modern" placeholder="Add Note or Patient Name (Optional)...">
+                    </div>
+                    
+                    <div class="save-btn-row">
+                        <button onclick="finalizeAndSave()" class="btn btn-accent">
+                            <i class="fas fa-check-circle" style="margin-right:8px;"></i> Save Data
+                        </button>
+                        <button onclick="document.getElementById('active-session-card').remove()" class="btn" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #cbd5e1;">
+                            Discard
+                        </button>
+                    </div>
+                </div>
+            </div>`;
+
+        const newGrid = document.getElementById('editable-grid');
+        const imgBox = document.getElementById('internal-preview-box');
+        const img = document.getElementById('inner-form-img');
+
+        // IF DOCUMENT FILLED (MODE 2)
+        if(data.filled_image_url) {
+            currentDocUrl = data.filled_image_url;
+            
+            // Use the NEW internal image
+            img.src = data.filled_image_url + "?t=" + new Date().getTime();
+            imgBox.style.display = 'block'; // Show image container
+            newGrid.style.display = 'none'; // Hide text grid
+            
+            const dlLink = document.getElementById('download-link');
+            dlLink.href = data.filled_image_url;
+            dlLink.style.display = 'inline-flex';
+            
+            // Hide the old external preview container just in case
+            const oldPreview = document.getElementById('preview-container');
+            if(oldPreview) oldPreview.style.display = 'none';
+
+            status.innerHTML = "Document filled successfully.";
+
+            // Save visual fields hidden for backend
+            if (data.visual_fields) {
+                data.visual_fields.forEach(f => {
+                     newGrid.innerHTML += `<span class="field-value" data-key="${f.key}" style="display:none;">${f.value}</span>`;
+                });
+            }
+
+        } else {
+            // NORMAL TEXT CAPTURE (MODE 1)
+            imgBox.style.display = 'none'; // Hide image
+            newGrid.style.display = 'grid'; // Show grid
+            
+            if (data.visual_fields && Array.isArray(data.visual_fields)) {
+                data.visual_fields.forEach(f => {
+                    newGrid.innerHTML += `
+                        <div class="editable-field" style="padding: 15px 10px; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: center; cursor: pointer;" ondblclick="makeEditable(this)">
+                           <span style="color: var(--primary); font-size: 0.9rem; text-transform: uppercase;">${f.key}</span>
+                            <span class="field-value" data-key="${f.key}" style="font-weight: 500; font-size: 1.1rem; color: white; border-bottom: 1px dashed rgba(255,255,255,0.2);">${f.value}</span>
+                        </div>`;
+                });
+            }
+            status.innerText = data.confirmation_message || "Processing complete.";
+        }
+        
+    } catch (e) { 
+        console.error(e);
+        status.innerText = "Error: " + e.message; 
+    }
+}function toggleTextPanel() {
+
+    const textPanel = document.getElementById('text-only-panel');
+    const voicePanel = document.getElementById('dictation-ui');
+    const btn = document.getElementById('toggleTextBtn');
+    
+    // Close Voice if open
+    if(isRecording) toggleFormRecording(); 
+    voicePanel.style.display = 'none';
+
+    if (textPanel.style.display === 'none') {
+        textPanel.style.display = 'block';
+        btn.style.background = 'rgba(255, 255, 255, 0.1)';
+        btn.innerHTML = '<i class="fas fa-times"></i> <span>Close Text</span>';
+    } else {
+        textPanel.style.display = 'none';
+        btn.style.background = ''; 
+        btn.innerHTML = '<i class="fas fa-keyboard"></i> <span>Fill from Text</span>';
+    }
+}
+function handleDocUpload(input) {
+    if (input.files.length > 0) {
+        const file = input.files[0];
+        const wrapper = input.closest('.file-upload-wrapper');
+        document.getElementById('formDocName').innerText = file.name;
+        
+        // Apply theme colors to the expanded box instead of white
+        if (wrapper) {
+            wrapper.style.background = "rgba(15, 23, 42, 0.8)"; 
+            wrapper.style.borderColor = "rgba(59, 130, 246, 0.5)";
+            wrapper.style.borderStyle = "solid";
+        }
+
+        // Remove the "Tap answer via voice..." helper text
+        const helperText = document.querySelector('.transcript-history .history-line');
+        if (helperText) helperText.style.display = 'none';
+
+        const separators = document.getElementById('default-separators');
+        if (separators) separators.style.display = 'none';
+
+        const previewImg = document.getElementById('form-upload-preview');
+        if (file.type.startsWith('image/')) {
+            previewImg.src = URL.createObjectURL(file);
+            previewImg.style.display = 'block';
+        }
+
+        const container = document.getElementById('interaction-container');
+        const mountPoint = document.getElementById('doc-mount-point');
+        if (container && mountPoint) {
+            mountPoint.appendChild(container);
+            container.style.width = "100%";
+        }
+
+        const modeLabel = document.getElementById('doc-mode-label');
+        if (modeLabel) modeLabel.style.display = 'block';
+    }
+}
+async function processDocWithText() {
+    const text = document.getElementById('docTextInstruction').value;
+    const docInput = document.getElementById('formDocInput');
+    
+    if (!docInput.files[0]) return alert("Please upload a document first.");
+    if (!text.trim()) return alert("Please tell us what to fill in the document.");
+    
+    // Calls the main processor, passing null for audio, but passing our specific text
+    // The main processor automatically picks up the file from 'formDocInput'
+    processFormVoice(null, text); 
+}
+function makeEditable(element) {
+    const span = element.querySelector('.field-value');
+    const currentValue = span.innerText;
+    const input = document.createElement('input');
+    input.value = currentValue;
+    input.style.cssText = "background: black; color: white; border: 1px solid var(--accent); width: 100%; border-radius: 4px; padding: 2px;";
+    
+    input.onblur = () => {
+        span.innerText = input.value;
+        span.style.display = 'inline';
+        input.remove();
+    };
+    
+    span.style.display = 'none';
+    element.appendChild(input);
+    input.focus();
+}
+
+async function finalizeAndSave() {
+    // 1. Target the button inside the new footer structure
+    const btn = document.querySelector('.save-btn-row button'); 
+    const originalText = btn ? btn.innerHTML : '';
+    
+    if(btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...'; }
+
+    const data = {};
+    document.querySelectorAll('.field-value').forEach(span => {
+        if(span.dataset.key) data[span.dataset.key] = span.innerText;
+    });
+
+    // --- FIX: CAPTURE THE NEW MODERN INPUT ---
+    const footerInput = document.getElementById('form-patient-name');
+    if (footerInput && footerInput.value.trim() !== "") {
+        // Use this as the "Name" if we don't have one, or as "Notes"
+        if (!data["Name"] && !data["Patient Name"]) {
+            data["Name"] = footerInput.value.trim();
+        } else {
+            data["Notes"] = footerInput.value.trim();
+        }
+    }
+    
+    // Fallback for the old hidden text input if it exists
+    const manualInput = document.getElementById('textInstruction');
+    if (manualInput && manualInput.value.trim() !== "" && !data["Notes"]) {
+        data["Notes"] = manualInput.value.trim();
+    }
+    
+    // ... (Rest of the function remains the same: Document URL check, empty check, fetch call)    // --- Add Document URL if exists ---
+    if(currentDocUrl) {
+        data['document_url'] = currentDocUrl;
+        data['Mode'] = "Document Fill"; 
+    }
+
+    // Validation: Check if we have ANYTHING to save
+    if(Object.keys(data).length === 0) { 
+        alert("No data to save! Please type some text or speak first."); 
+        if(btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-save"></i> Save Record'; }
+        return; 
+    }
+
+    try {
+        const res = await fetch('/save_patient_data', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        });
+        
+        if (res.ok) {
+            const history = document.getElementById('history-section');
+            if (history.innerHTML.includes("No saved records found")) history.innerHTML = "";
+
+            renderHistoryCard(data, true); // Prepend to top
+            
+            // Cleanup
+            const activeCard = document.getElementById('active-session-card');
+            if(activeCard) activeCard.remove();
+            
+            document.getElementById('confirmation-msg').innerText = "Record saved successfully.";
+            if(footerInput) footerInput.value = ""; // Clear the footer input
+            
+            // Clear the text input after successful save
+            if(manualInput) manualInput.value = ""; 
+        }
+    } catch(e) { 
+        alert("Save failed: " + e.message); 
+        if(btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-save"></i> Save Record'; }
+    }
+}
+async function loadHistory() {
+    const historySection = document.getElementById('history-section');
+    if(!historySection) return;
+
+    try {
+        // Added timestamp to prevent browser caching
+        const res = await fetch('/get_patient_history?t=' + new Date().getTime());
+        const records = await res.json();
+        
+        // 1. STRICTLY CLEAR CONTAINER BEFORE RENDERING
+        historySection.innerHTML = ""; 
+        
+        if(records.length === 0) {
+            historySection.innerHTML = "<div style='color:var(--text-muted); font-size:0.8rem; text-align:center; padding:20px;'>No saved records found.</div>";
+            return;
+        }
+
+        records.forEach(record => {
+            renderHistoryCard(record, false); // false = append to bottom
+        });
+    } catch(e) { 
+        console.error("Failed to load history:", e); 
+    }
+}
+let audioContext, analyser, dataArray, visualizerFrame;
+function startVisualizer(stream, visualizerId) {
+    const container = document.getElementById(visualizerId);
+    // Note: container display is handled by the toggle functions now
+    
+    if(!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const source = audioContext.createMediaStreamSource(stream);
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 64;
+    source.connect(analyser);
+    
+    dataArray = new Uint8Array(analyser.frequencyBinCount);
+    
+    // Select bars based on the specific container
+    const bars = container.querySelectorAll('.clinical-bar, .wave-bar');
+    
+    function animate() {
+        analyser.getByteFrequencyData(dataArray);
+        bars.forEach((bar, i) => {
+            const value = dataArray[i * 2 + 2] || 10; 
+            // Scaled height for subtle look
+            const height = Math.max(4, (value / 255) * 30); 
+            bar.style.height = `${height}px`;
+        });
+        visualizerFrame = requestAnimationFrame(animate);
+    }
+    animate();
+}
+
+function stopVisualizer(visualizerId) {
+    if(visualizerFrame) cancelAnimationFrame(visualizerFrame);
+    const container = document.getElementById(visualizerId);
+    if(container) container.style.display = 'none';
+}
+// Updated Render Function (Vertical List Layout)
+function renderHistoryCard(data, prepend = false) {
+    const history = document.getElementById('history-section');
+    const uniqueId = data.id || "rec-" + Math.random().toString(36).substr(2, 9);
+    
+    // Determine Main Name
+    const mainName = data["Name"] || data["Full Name"] || data["Patient Name"] || (data["document_url"] ? "Document Record" : "Patient Record");
+    
+    // Determine Professional Subtitle (Replaces ID)
+    let subTitle = "Digital Entry";
+    if (data["Mode"]) subTitle = data["Mode"]; // Use mode if saved (e.g. "Document Fill")
+    else if (data["document_url"]) subTitle = "Scanned Document";
+    else if (data["Notes"]) subTitle = "Manual Note";
+    else subTitle = "Voice Capture";
+
+    let detailsHtml = `<div id="details-${uniqueId}" style="display: none; margin-top: 20px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.08); display: grid; grid-template-columns: 1fr; gap: 0px;">`;
+    
+    let docButtonHtml = "";
+
+    for (const [key, value] of Object.entries(data)) {
+        if(key === "document_url") {
+            docButtonHtml = `
+                <div style="padding: 15px 10px; border-bottom: 1px solid rgba(255,255,255,0.05); text-align: center;">
+                    <a href="${value}" target="_blank" class="btn btn-accent" 
+                       style="display: inline-flex; width: auto; padding: 8px 25px; font-size: 0.85rem; text-decoration: none; color: white; border-radius: 50px;">
+                        <i class="fas fa-file-image" style="margin-right:8px;"></i> View Saved Document
+                    </a>
+                </div>`;
+            continue; 
+        }
+
+        if(key !== "timestamp" && key !== "id" && key !== "Mode") {
+            detailsHtml += `
+                <div style="padding: 15px 10px; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: center;">
+                    <span style="color: var(--text-muted); font-size: 0.85rem; text-transform:uppercase; letter-spacing: 0.5px;">${key}</span>
+                    <span style="color: white; font-size: 1rem; font-weight: 500; text-align: right; margin-left: 20px;">${value}</span>
+                </div>`;
+        }
+    }
+
+    detailsHtml = detailsHtml + docButtonHtml + `</div>`;
+
+    const cardHtml = `
+        <div id="card-${uniqueId}" class="history-card">
+            <div class="history-header" onclick="toggleHistoryDetails('${uniqueId}', this)">
+                <div style="display: flex; align-items: center; gap: 15px;">
+                    <div style="background: rgba(16, 185, 129, 0.1); width: 45px; height: 45px; border-radius: 12px; display: flex; align-items: center; justify-content: center;">
+                        <i class="fas fa-file-medical" style="color: var(--success); font-size: 1.2rem;"></i>
+                    </div>
+                    <div>
+                        <span style="display: block; font-weight: 600; font-size: 1.1rem; color: white;">${mainName}</span>
+                        <span style="font-size: 0.75rem; color: var(--accent); text-transform: uppercase; font-weight: 600; letter-spacing: 1px;">
+                            ${subTitle}
+                        </span>
+                    </div>
+                </div>
+                
+                <div style="display:flex; align-items:center;">
+                    <span style="color:var(--text-muted); font-size:0.8rem; margin-right: 15px;" class="desktop-only">${data.timestamp || 'Just now'}</span>
+                    <button class="delete-btn" onclick="deleteRecord('${uniqueId}', event)" title="Delete Record">
+                        <i class="fas fa-trash-alt"></i>
+                    </button>
+                    <i id="icon-${uniqueId}" class="fas fa-chevron-down" style="margin-left: 15px; color: var(--text-muted); transition: transform 0.3s;"></i>
+                </div>
+            </div>
+            
+            <div id="details-wrapper-${uniqueId}" style="display:none;">
+                ${detailsHtml}
+            </div>
+        </div>
+    `;
+    
+    if (prepend) history.insertAdjacentHTML('afterbegin', cardHtml);
+    else history.insertAdjacentHTML('beforeend', cardHtml);
+}
+function toggleHistoryDetails(id, headerElement) {
+    const wrapper = document.getElementById(`details-wrapper-${id}`);
+    const icon = document.getElementById(`icon-${id}`);
+    
+    if (wrapper.style.display === "none") {
+        wrapper.style.display = "block"; // Show wrapper
+        const grid = document.getElementById(`details-${id}`);
+        grid.style.display = "grid"; // Ensure grid layout is active
+        
+        icon.style.transform = "rotate(180deg)";
+        icon.style.color = "var(--accent)";
+    } else {
+        wrapper.style.display = "none";
+        icon.style.transform = "rotate(0deg)";
+        icon.style.color = "var(--text-muted)";
+    }
+}
+
+// NEW: Delete Function
+async function deleteRecord(id, event) {
+    // Stop the click from opening the accordion
+    event.stopPropagation();
+    
+    if(!confirm("Are you sure you want to permanently delete this record?")) return;
+
+    const card = document.getElementById(`card-${id}`);
+    card.style.opacity = "0.5"; // Visual feedback
+
+    try {
+        const res = await fetch('/delete_patient_record', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: id })
+        });
+
+        if(res.ok) {
+            // Animate removal
+            card.style.transform = "translateX(50px)";
+            card.style.opacity = "0";
+            setTimeout(() => card.remove(), 300);
+        } else {
+            alert("Failed to delete record on server.");
+            card.style.opacity = "1";
+        }
+    } catch(e) {
+        console.error(e);
+        alert("Error connecting to server.");
+        card.style.opacity = "1";
+    }
+}
+function switchTab(tab) {
+    // 1. Reset all sections
+    document.querySelectorAll('.dashboard-section').forEach(el => el.classList.remove('active'));
+
+    // 2. Reset all nav buttons
+    const navItems = document.querySelectorAll('.nav-item');
+    navItems.forEach(el => el.classList.remove('active'));
+
+    // 3. Activate specific tab
+    // Note: Emergency case removed
+    if (tab === 'bio') {
+        document.getElementById('section-bio').classList.add('active');
+        navItems[0].classList.add('active'); // Adjusted index
+    } 
+    else if (tab === 'visual') {
+        document.getElementById('section-visual').classList.add('active');
+        navItems[1].classList.add('active'); 
+    } 
+    else if (tab === 'form') {
+        document.getElementById('section-form').classList.add('active');
+        navItems[2].classList.add('active'); 
+    }
+}// 1. Initialize Emergency Mode (Triggers Map)
+function initEmergencyMode() {
+    const statusDiv = document.getElementById('loc-status');
+    const overlay = document.getElementById('map-overlay');
+    
+    // Initialize Map if not already done
+    if (!map) {
+        initMap();
+    }
+
+    if (navigator.geolocation) {
+        statusDiv.innerHTML = `<i class="fas fa-satellite-dish fa-spin"></i> Locating...`;
+        
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                userLat = position.coords.latitude;
+                userLng = position.coords.longitude;
+                
+                statusDiv.innerHTML = `<i class="fas fa-crosshairs"></i> Found: ${userLat.toFixed(4)}, ${userLng.toFixed(4)}`;
+                
+                // --- ANIMATION SEQUENCE ---
+                
+                // 1. Fade out the loading overlay
+                if(overlay) overlay.style.opacity = '0';
+                setTimeout(() => { if(overlay) overlay.style.display = 'none'; }, 1000);
+
+                // 2. Smooth Pan/Zoom to User (The "Fly-to" effect)
+                const userLoc = { lat: userLat, lng: userLng };
+                map.panTo(userLoc);
+                
+                setTimeout(() => {
+                    map.setZoom(14); // Zoom in close
+                    
+                    // Add User Marker
+                    new google.maps.Marker({
+                        position: userLoc,
+                        map: map,
+                        title: "You are here",
+                        icon: {
+                            path: google.maps.SymbolPath.CIRCLE,
+                            scale: 8,
+                            fillColor: "#4285F4",
+                            fillOpacity: 1,
+                            strokeWeight: 2,
+                            strokeColor: "white",
+                        }
+                    });
+                    
+                    // 3. Fetch Hospitals after arriving
+                    fetchNearbyHospitals(userLat, userLng);
+                    
+                }, 1500); // Wait for Pan to finish slightly
+            },
+            (error) => {
+                statusDiv.innerHTML = `<i class="fas fa-exclamation-triangle"></i> Location Denied`;
+                if(overlay) overlay.innerHTML = "<p style='color:white'>Location Access Denied</p>";
+            }
+        );
+    } else {
+        statusDiv.innerHTML = "Geolocation not supported";
+    }
+}
+async function fetchNearbyHospitals(lat, lng) {
+    const listContainer = document.getElementById('hospital-list');
+    listContainer.innerHTML = `<div style="text-align:center; color:var(--text-muted); padding-top:20px;"><i class="fas fa-circle-notch fa-spin"></i> Finding nearby clinics...</div>`;
+
+    try {
+        const res = await fetch('/get_nearby_hospitals', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ lat: lat, lng: lng })
+        });
+        
+        const data = await res.json();
+        listContainer.innerHTML = ""; 
+
+        if (data.error) {
+            listContainer.innerHTML = `<p style='color:#ef4444; text-align:center;'>${data.error}</p>`;
+            return;
+        }
+
+        // Clear old markers
+        markers.forEach(m => m.setMap(null));
+        markers = [];
+
+        if(data.length === 0) {
+            listContainer.innerHTML = "<p style='color:white; text-align:center;'>No hospitals found nearby.</p>";
+            return;
+        }
+
+        // Process Data
+        data.forEach((h, index) => {
+            // 1. Add List Item (Existing Logic)
+            const hLat = h.geometry?.location?.lat || lat;
+            const hLng = h.geometry?.location?.lng || lng;
+            const navUrl = `https://www.google.com/maps/dir/?api=1&destination=${hLat},${hLng}`;
+            
+            listContainer.innerHTML += `
+                <div class="hospital-card" onclick="map.panTo({lat:${hLat}, lng:${hLng}}); map.setZoom(16);">
+                    <div>
+                        <span class="h-name">${h.name}</span>
+                        <span class="h-dist">${h.vicinity || "Near you"}</span>
+                    </div>
+                    <div class="h-actions">
+                        <a href="${navUrl}" target="_blank" class="btn-nav"><i class="fas fa-location-arrow"></i> Go</a>
+                    </div>
+                </div>`;
+
+            // 2. ADD MAP MARKER (The Pin)
+            const marker = new google.maps.Marker({
+                position: { lat: hLat, lng: hLng },
+                map: map,
+                title: h.name,
+                animation: google.maps.Animation.DROP, // Drops the pin nicely
+            });
+            markers.push(marker);
+        });
+
+    } catch (e) {
+        console.error(e);
+        listContainer.innerHTML = "<p style='color:red; text-align:center;'>Network Error.</p>";
+    }
+}
+function updatePromptPlaceholder() {
+    const type = document.getElementById('scanType').value;
+    const prompt = document.getElementById('visionPrompt');
+    const fileInput = document.getElementById('medInput');
+    const label = document.getElementById('visionFileName');
+    
+    // 1. Reset Stored Files when mode changes
+    selectedFiles = [];
+    renderPreviews();
+
+    // 2. Configure Input based on Type
+    fileInput.setAttribute('multiple', 'true'); // ALWAYS allow multiple now
+    
+    if (type === 'wound') {
+        label.innerText = "Upload Wound Series (Max 5)";
+        prompt.placeholder = "e.g., 'Is this healing correctly from Day 1 to Day 3?'";
+    } else {
+        label.innerText = "Upload Clinical Image(s) (Tap to add more)";
+        if (type === 'medicine') {
+            prompt.placeholder = "e.g., 'Can I take these two pills together?'";
+        } else {
+            prompt.placeholder = "e.g., 'Is this meal good for a diabetic?'";
+        }
+    }
+}
+        // --- AUDIO RECORDING & UPLOAD LOGIC ---
+        let mediaRecorder;
+        let audioChunks = [];
+        let isRecording = false;
+function handleVisualUpload(input) {
+    if (input.files.length > 0) {
+        const type = document.getElementById('scanType').value;
+        
+        // Append files (Limit check happens in render/analyze)
+        for (let i = 0; i < input.files.length; i++) {
+            if (selectedFiles.length >= 5) {
+                alert("Maximum 5 images allowed for analysis.");
+                break;
+            }
+            selectedFiles.push(input.files[i]);
+        }
+        renderPreviews();
+    }
+    input.value = ''; 
+}
+function initMap() {
+    const mapStyle = [
+        { elementType: "geometry", stylers: [{ color: "#242f3e" }] },
+        { elementType: "labels.text.stroke", stylers: [{ color: "#242f3e" }] },
+        { elementType: "labels.text.fill", stylers: [{ color: "#746855" }] },
+        { featureType: "road", elementType: "geometry", stylers: [{ color: "#38414e" }] },
+        { featureType: "water", elementType: "geometry", stylers: [{ color: "#17263c" }] },
+    ];
+
+    map = new google.maps.Map(document.getElementById("google-map"), {
+        center: { lat: 20.5937, lng: 78.9629 }, // Center of India (Initial)
+        zoom: 3, // Low zoom = Globe/World view
+        styles: mapStyle,
+        disableDefaultUI: true, // Clean look
+        mapTypeId: 'satellite' // Looks more like a real globe
+    });
+}
+function renderPreviews() {
+    const grid = document.getElementById('preview-grid');
+    const scanType = document.getElementById('scanType').value;
+    grid.innerHTML = ""; // Clear current
+
+    selectedFiles.forEach((file, index) => {
+        const url = URL.createObjectURL(file);
+        
+        // Day Label Logic: Only show if Wound Mode AND more than 1 image
+        let dayLabel = "";
+        if (scanType === 'wound' && selectedFiles.length > 1) {
+            dayLabel = `<div style="position: absolute; bottom: 0; left: 0; width: 100%; background: rgba(59, 130, 246, 0.9); color: white; font-size: 10px; text-align: center; padding: 2px 0; font-weight: bold;">Day ${index + 1}</div>`;
+        }
+
+        const div = document.createElement('div');
+        div.style.cssText = "position: relative; width: 60px; height: 60px; border-radius: 8px; overflow: hidden; border: 1px solid #555;";
+        
+        div.innerHTML = `
+            <img src="${url}" style="width: 100%; height: 100%; object-fit: cover;">
+            ${dayLabel}
+            <div onclick="removeFile(${index})" style="position: absolute; top: 0; right: 0; background: rgba(0,0,0,0.7); color: white; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; font-size: 12px; cursor: pointer; z-index: 10;">×</div>
+        `;
+        grid.appendChild(div);
+    });
+
+    // Update Label Text
+    const label = document.getElementById('visionFileName');
+    if (selectedFiles.length > 0) {
+        label.innerText = `${selectedFiles.length} Image(s) Selected`;
+        label.style.color = "var(--accent)";
+    } else {
+        label.innerText = scanType === 'wound' ? "Upload Wound Series (Max 5)" : "Upload Clinical Image(s)";
+        label.style.color = "";
+    }
+}
+
+function removeFile(index) {
+    selectedFiles.splice(index, 1);
+    renderPreviews();
+}
+function resetVisualScanner() {
+    // Reset inputs
+    document.getElementById('medInput').value = "";
+    document.getElementById('visionFileName').innerText = "Upload Clinical Image";
+    document.getElementById('visionPrompt').value = "";
+    
+    // Switch States
+    document.getElementById('vis-state-result').classList.add('hidden-state');
+    document.getElementById('vis-state-upload').classList.remove('hidden-state');
+}
+/* --- IMPROVED JAVASCRIPT LOGIC --- */
+
+let loadingInterval;
+
+function cycleLoadingMessages(scanType) {
+    const statusEl = document.getElementById('scan-status-text');
+    let messages = [];
+
+    // Context-Aware Messages
+    if (scanType === 'wound') {
+        messages = [
+            "Detecting tissue boundaries...",
+            "Analyzing wound coloration...",
+            "Checking for necrosis...",
+            "Evaluating infection risk...",
+            "Formulating care protocol..."
+        ];
+    } else if (scanType === 'medicine') {
+        messages = [
+            "Scanning pharmaceutical label...",
+            "Identifying active ingredients...",
+            "Checking contraindications...",
+            "Verifying dosage safety...",
+            "Generating safety report..."
+        ];
+    } else {
+        messages = [
+            "Analyzing caloric density...",
+            "Breaking down macronutrients...",
+            "Calculating glycemic load...",
+            "Checking dietary suitability..."
+        ];
+    }
+
+    let i = 0;
+    statusEl.innerText = messages[0]; // Start immediately
+    
+    // Rotate text every 1.5 seconds
+    loadingInterval = setInterval(() => {
+        i = (i + 1) % messages.length;
+        statusEl.innerText = messages[i];
+    }, 1500);
+}
+
+async function analyzeVision() {
+    const promptVal = document.getElementById('visionPrompt').value.trim();
+    const scanType = document.getElementById('scanType').value;
+    const hasImages = selectedFiles.length > 0;
+    
+    // --- VALIDATION ---
+    if (scanType === 'wound') {
+        if (!hasImages || !promptVal) {
+            alert("⚠️ Skin Scanner requires exactly 1 Image AND a text description.");
+            return;
+        }
+    } else {
+        if (!hasImages && !promptVal) {
+            alert("Please provide either an image OR a text description.");
+            return;
+        }
+    }
+// --- UI TRANSITION LOGIC ---
+    // Hide Upload State
+    document.getElementById('vis-state-upload').classList.add('hidden-state');
+
+    if (hasImages) {
+        // IMAGE MODE: Setup & Show Animation
+        const scanContainer = document.getElementById('vis-state-scanning');
+        const imgContainer = document.getElementById('scan-image-container');
+        
+        scanContainer.classList.remove('hidden-state');
+        imgContainer.innerHTML = ""; // Clear previous
+        
+        // Decide layout based on count
+        if (selectedFiles.length > 1) imgContainer.classList.add('scan-grid-mode');
+        else imgContainer.classList.remove('scan-grid-mode');
+
+        // Populate Images
+        selectedFiles.forEach(file => {
+            const img = document.createElement('img');
+            img.src = URL.createObjectURL(file);
+            img.className = "scan-img-item";
+            imgContainer.appendChild(img);
+        });
+
+        cycleLoadingMessages(scanType);
+    } else {
+        // TEXT ONLY MODE: (Keep existing logic)
+        document.getElementById('vis-state-result').classList.remove('hidden-state');
+        document.getElementById('vis-dynamic-content').innerHTML = `
+            <div style="text-align: center; padding: 40px; color: var(--text-muted);">
+                <i class="fas fa-brain fa-spin" style="font-size: 2rem; color: var(--accent); margin-bottom: 15px;"></i>
+                <p>Analyzing your query...</p>
+            </div>
+        `;
+        document.getElementById('res-main-alert').innerText = "Processing...";
+        document.getElementById('res-tag-type').style.display = 'none';
+    }
+
+    let formData = new FormData();
+    formData.append("scan_type", scanType);
+    formData.append("user_prompt", promptVal);
+    formData.append("language", currentLang); // Add this line
+    
+    if (hasImages) {
+        selectedFiles.forEach(file => {
+            formData.append("images", file);
+        });
+    }
+
+    try {
+        let response = await fetch('/analyze_vision', { method: "POST", body: formData });
+        if (!response.ok) throw new Error(`Server Error: ${response.status}`);
+        
+        let data = await response.json();
+        
+        // Clean up animation (if it was running)
+        clearInterval(loadingInterval);
+        document.getElementById('vis-state-scanning').classList.add('hidden-state');
+        
+        // Show Result
+        document.getElementById('vis-state-result').classList.remove('hidden-state');
+        document.getElementById('res-tag-type').style.display = 'inline-block'; // Bring badge back
+        
+        renderVisualResult(data, scanType);
+        
+    } catch (e) {
+        clearInterval(loadingInterval);
+        alert("Error: " + e.message);
+        resetVisualScanner();
+    }
+}
+function toggleSidebar() {
+    const sidebar = document.getElementById('mainSidebar');
+    sidebar.classList.toggle('collapsed');
+}
+function renderVisualResult(data, type) {
+    const contentDiv = document.getElementById('vis-dynamic-content');
+    const tag = document.getElementById('res-tag-type');
+    const alertHeader = document.getElementById('res-main-alert');
+    
+    tag.innerText = type.toUpperCase() + " REPORT";
+    let html = "";
+
+    // --- 1. WOUND LOGIC ---
+    if (type === 'wound') {
+        let severityColor = "#10b981"; // Default Green
+        let bgClass = "rgba(16, 185, 129, 0.15)";
+        
+        const sev = data.severity ? data.severity.toLowerCase() : "";
+        const stat = data.clinical_status ? data.clinical_status.toLowerCase() : "";
+
+        if (sev.includes("critical") || sev.includes("er") || sev.includes("high")) {
+            severityColor = "#ef4444"; // Red
+            bgClass = "rgba(239, 68, 68, 0.15)";
+        } else if (sev.includes("moderate") || sev.includes("clinic") || stat.includes("spreading")) {
+            severityColor = "#f97316"; // Orange
+            bgClass = "rgba(249, 115, 22, 0.15)";
+        }
+
+        alertHeader.innerText = data.condition_name || "Clinical Analysis";
+        alertHeader.style.color = severityColor; 
+
+        if(data.category) {
+            html += `<div style="display:inline-block; background:rgba(255,255,255,0.1); padding:4px 8px; border-radius:4px; font-size:0.75rem; color:#ccc; margin-bottom:15px;">
+                        <i class="fas fa-tag"></i> ${data.category}
+                     </div>`;
+        }
+
+        // NEW: Timeline / Trend Display for Day 1 vs Current
+        if (data.healing_trend && data.healing_trend !== "N/A (Single Image)") {
+            let trendIcon = "fa-minus";
+            let trendColor = "#94a3b8"; // Gray
+
+            if (data.healing_trend.toLowerCase().includes("improving")) {
+                trendIcon = "fa-arrow-trend-up";
+                trendColor = "#10b981"; // Green
+            } else if (data.healing_trend.toLowerCase().includes("worsening")) {
+                trendIcon = "fa-arrow-trend-down";
+                trendColor = "#ef4444"; // Red
+            }
+
+            html += `<div style="background: rgba(15, 23, 42, 0.6); border: 1px solid ${trendColor}; padding: 15px; border-radius: 12px; margin-bottom: 20px; display: flex; align-items: center; gap: 15px;">
+                <div style="background: ${trendColor}20; width: 50px; height: 50px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
+                    <i class="fas ${trendIcon}" style="color: ${trendColor}; font-size: 1.5rem;"></i>
+                </div>
+                <div>
+                    <div style="font-size: 0.8rem; color: #94a3b8; text-transform: uppercase; font-weight: 600;">Healing Progression</div>
+                    <div style="font-size: 1.1rem; color: white; font-weight: 600;">${data.healing_trend}</div>
+                    <div style="font-size: 0.85rem; color: #cbd5e1; margin-top: 4px;">${data.timeline_analysis || "Comparison complete."}</div>
+                </div>
+            </div>`;
+        }
+
+        if (data.immediate_care) {
+            html += `<div style="background: ${bgClass}; border-left: 4px solid ${severityColor}; padding: 15px; border-radius: 4px; margin-bottom: 20px;">
+                <div style="color: ${severityColor}; font-weight: 700; font-size: 0.8rem; margin-bottom: 5px; text-transform: uppercase;">
+                    <i class="fas fa-user-nurse"></i> Recommended Action
+                </div>
+                <div style="color: white; font-size: 0.95rem; line-height: 1.5;">${data.immediate_care}</div>
+            </div>`;
+        }
+
+        html += `<div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:15px;">
+                    <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:8px;">
+                        <div style="font-size:0.7rem; color:#94a3b8; text-transform:uppercase;">Clinical Status</div>
+                        <div style="font-size:1rem; color:white; font-weight:500;">${data.clinical_status || "N/A"}</div>
+                    </div>
+                    <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:8px;">
+                        <div style="font-size:0.7rem; color:#94a3b8; text-transform:uppercase;">Severity Triage</div>
+                        <div style="font-size:1rem; font-weight:500; color:${severityColor};">${data.severity}</div>
+                    </div>
+                 </div>`;
+                 
+        html += `<div class="ai-message" style="border-left: 3px solid ${severityColor};">
+                    <strong>Findings:</strong> ${data.answer_to_user}
+                 </div>`;
+
+        if(data.recommendation) {
+            html += `<div style="margin-top:15px; padding-top:10px; border-top:1px solid rgba(255,255,255,0.1); color:#94a3b8; font-size: 0.9rem;">
+                        <i class="fas fa-clipboard-list"></i> <strong>Care Plan:</strong> ${data.recommendation}
+                     </div>`;
+        }
+
+    // --- 2. MEDICINE LOGIC ---
+    } else if (type === 'medicine') {
+        const isSafe = data.safety_alert && data.safety_alert.toLowerCase().includes("safe");
+        alertHeader.innerText = data.safety_alert || "Safety Check Complete";
+        alertHeader.style.color = isSafe ? "#10b981" : "#ef4444";
+        
+        html += `<div class="ai-message" style="border-left: 3px solid ${isSafe ? '#10b981' : '#ef4444'}">
+                    ${data.answer_to_user}
+                 </div>`;
+        if(data.medicines_found) {
+            html += `<div style="margin-top:10px; font-size:0.9rem; color:#ccc;">Detected: ${data.medicines_found.map(m=>m.brand).join(', ')}</div>`;
+        }
+
+    // --- 3. NUTRITION LOGIC ---
+    } else { 
+        alertHeader.innerText = "Nutritional Breakdown";
+        alertHeader.style.color = "#3b82f6"; // Blue
+        
+        html += `<div class="ai-message" style="border-left: 3px solid #3b82f6;">${data.answer_to_user}</div>`;
+        
+        if (data.deficiency_alert && data.deficiency_alert.length > 5) {
+             html += `<div style="margin-top:15px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); padding: 10px; border-radius: 8px; font-size: 0.9rem; color: #fca5a5;">
+                <i class="fas fa-exclamation-triangle"></i> ${data.deficiency_alert}
+             </div>`;
+        }
+
+        if(data.improvements) {
+             html += `<div style="margin-top:20px; background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.2); padding: 15px; border-radius: 8px;">
+                <div style="color: #60a5fa; font-weight: 600; font-size: 0.95rem; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">
+                    <i class="fas fa-magic"></i> Suggested Improvements
+                </div>
+                <div style="color: #e2e8f0; font-size: 0.95rem; line-height: 1.6;">${data.improvements}</div>
+             </div>`;
+        }
+        
+        if(data.nutritional_info) {
+             html += `<div style="margin-top:15px; font-family:monospace; color:#64748b; font-size: 0.8rem; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 10px;">
+                ${data.nutritional_info}
+             </div>`;
+        }
+    }
+
+    currentVisualData = data; 
+    currentVisualData.scan_type = type; 
+
+    // MODERN SAVE UI FOR VISUAL SCANNER
+    html += `
+        <div class="save-action-card">
+            <div class="save-header">
+                <i class="fas fa-cloud-upload-alt" style="color: var(--accent);"></i> Save Analysis
+            </div>
+            
+            <div class="save-input-group">
+                <input type="text" id="vis-patient-name" class="save-input-modern" placeholder="Enter Patient Name...">
+            </div>
+            
+            <div class="save-btn-row">
+                <button onclick="saveVisualToCloud()" class="btn btn-accent">
+                     <i class="fas fa-save" style="margin-right:8px;"></i> Save Record
+                </button>
+                <button onclick="resetVisualScanner()" class="btn" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #cbd5e1;">
+                    Dismiss
+                </button>
+            </div>
+        </div>
+    `;
+
+    contentDiv.innerHTML = html;
+}
+
+// --- NEW FUNCTION: Save Bio Data ---
+async function saveBioToCloud() {
+    const name = document.getElementById('bio-patient-name').value.trim();
+    if (!name) return alert("Please enter a Patient Name to save.");
+    if (!currentBioData) return alert("No analysis data to save.");
+
+    const btn = document.querySelector("button[onclick='saveBioToCloud()']");
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+    btn.disabled = true;
+
+    const payload = {
+        "Name": name,
+        "Condition": currentBioData.condition,
+        "Severity": currentBioData.severity,
+        "Diagnosis": currentBioData.disease_type,
+        "Notes": currentBioData.simple_explanation,
+        "Mode": "Bio-Acoustics"
+    };
+
+    try {
+        const res = await fetch('/save_patient_data', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+        
+        if(res.ok) {
+            showToast("Bio Record Saved Successfully!"); // CHANGED
+            resetBioUI(); 
+            loadHistory();
+        } else {
+            throw new Error("Server rejected save.");
+        }
+    } catch (e) {
+        showToast("Save Failed: " + e.message, true); // CHANGED
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    }
+}
+
+// --- NEW FUNCTION: Save Visual Data ---
+async function saveVisualToCloud() {
+    const name = document.getElementById('vis-patient-name').value.trim();
+    if (!name) return alert("Please enter a Patient Name.");
+    if (!currentVisualData) return alert("No analysis data found.");
+
+    const btn = document.querySelector("button[onclick='saveVisualToCloud()']");
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+    btn.disabled = true;
+
+    // Construct Payload based on what was scanned
+    const payload = {
+        "Name": name,
+        "Mode": "Visual Scanner (" + currentVisualData.scan_type + ")",
+        "Alert": document.getElementById('res-main-alert').innerText,
+        "Analysis": currentVisualData.answer_to_user,
+        "Recommendation": currentVisualData.recommendation || currentVisualData.immediate_care || "N/A"
+    };
+
+    try {
+        const res = await fetch('/save_patient_data', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+
+        if(res.ok) {
+            showToast("Visual Scan Saved Successfully!"); // CHANGED
+            resetVisualScanner(); 
+            loadHistory(); 
+        } else {
+            throw new Error("Server rejected save.");
+        }
+    } catch (e) {
+        showToast("Save Failed: " + e.message, true); // CHANGED
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    }
+}
+async function toggleRecording() {
+    resetBioUI();
+    const btn = document.getElementById('recordBtn');
+    const icon = btn.querySelector('i');
+    const text = btn.querySelector('span');
+    const viz = document.getElementById('bio-visualizer');
+
+    if (!isRecording) {
+        // START RECORDING
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            viz.style.display = 'flex'; // Show visualizer
+            startScrollingWave(stream, 'bio-visualizer'); 
+
+            mediaRecorder = new MediaRecorder(stream);
+            audioChunks = [];
+            
+            mediaRecorder.ondataavailable = event => audioChunks.push(event.data);
+            
+            mediaRecorder.onstop = () => {
+                stopScrollingWave('bio-visualizer'); 
+                viz.style.display = 'none'; // Hide visualizer on stop
+
+                // STORE BLOB, DO NOT SEND YET
+                storedAudioData = new Blob(audioChunks, { type: 'audio/wav' });
+                
+                // UI: Reset Button
+                btn.classList.remove('recording');
+                icon.className = "fas fa-check";
+                text.innerText = "Audio Captured";
+                
+                // ENABLE NEXT STEP
+                enableContextStep();
+            };
+
+            mediaRecorder.start();
+            isRecording = true;
+            
+            // UI Update
+            btn.classList.add('recording');
+            icon.className = "fas fa-stop";
+            text.innerText = "Stop Recording";
+            
+            // Disable file upload while recording
+            document.querySelector('.file-upload-wrapper').style.opacity = '0.3';
+            document.querySelector('.file-upload-wrapper').style.pointerEvents = 'none';
+
+        } catch (err) {
+            console.error(err);
+            alert("Microphone access denied.");
+        }
+    } else {
+        // STOP RECORDING
+        mediaRecorder.stop();
+        isRecording = false;
+        
+        // Re-enable file upload
+        document.querySelector('.file-upload-wrapper').style.opacity = '1';
+        document.querySelector('.file-upload-wrapper').style.pointerEvents = 'all';
+    }
+}        
+function handleAudioSelect(input) {
+    
+    resetBioUI(); 
+    if (input.files.length > 0) {
+        storedAudioData = input.files[0]; // Store the file
+        document.getElementById('audioFileName').innerText = input.files[0].name;
+        document.getElementById('audioFileName').style.color = "var(--accent)";
+        
+        // Disable Record Button to prevent confusion
+        const recBtn = document.getElementById('recordBtn');
+        recBtn.style.opacity = "0.5";
+        recBtn.disabled = true;
+
+        enableContextStep();
+    }
+}
+function enableContextStep() {
+    const stage = document.getElementById('bio-context-stage');
+    const btn = document.getElementById('btn-bio-final');
+    
+    // Remove disabled look
+    stage.classList.remove('disabled-stage');
+    stage.classList.add('active-stage');
+    
+    // Show Analyze Button
+    btn.style.display = 'inline-flex';
+    btn.style.justifyContent = 'center';
+    
+    // Focus on textarea
+    setTimeout(() => document.getElementById('audioPrompt').focus(), 300);
+}
+
+async function submitBioAnalysis() {
+    if (!storedAudioData) return alert("No audio found. Please record or upload first.");
+
+    const statusBox = document.getElementById('r-analysis');
+    const resultBox = document.getElementById('result-box');
+    const btn = document.getElementById('btn-bio-final');
+    
+    // UI Feedback
+    btn.innerHTML = "<i class='fas fa-spinner fa-spin'></i> Analyzing...";
+    statusBox.innerHTML = "<i class='fas fa-wave-square fa-spin'></i> Analyzing audio layers...";
+    resultBox.style.display = 'block';
+
+    let formData = new FormData();
+    let filename = storedAudioData.name || "live_record.wav";
+    
+    formData.append("audio", storedAudioData, filename);
+    formData.append("user_prompt", document.getElementById('audioPrompt').value);
+    formData.append("language", currentLang); 
+
+    try {
+        let response = await fetch('/analyze', { method: "POST", body: formData });
+        let data = await response.json();
+        
+        if(data.error) throw new Error(data.error);
+
+        // --- NEW: TRIGGER MINIMIZED UI MODE ---
+        // 1. Shrink the Controls
+        document.querySelector('.bio-centered-container').classList.add('minimized-mode');
+        
+        // 2. Expand the Result Box
+        resultBox.classList.add('expanded-view');
+
+        // --- (Rest of your existing logic for filling data) ---
+        if (data.valid_audio === false) {
+             // ... (Keep your existing failure logic) ...
+            document.getElementById('r-condition').innerText = "Scan Failed";
+            document.getElementById('r-condition').style.color = "#ef4444"; 
+            document.getElementById('r-type').innerText = "Invalid Input";
+            document.getElementById('r-analysis').innerHTML = `
+                <div style="color: #fca5a5; font-weight: 500;">
+                    <i class="fas fa-volume-mute"></i> ${data.simple_explanation || "Audio unclear."}
+                </div>`;
+            document.getElementById('r-action').innerText = "Please try recording again.";
+
+        } else {
+            // SUCCESS: Store data and Show Result
+            currentBioData = data; 
+
+            document.getElementById('r-condition').innerText = data.condition || "Unknown";
+            document.getElementById('r-condition').style.color = "white"; 
+            document.getElementById('r-type').innerText = data.disease_type; 
+            
+            // INJECT RESULT + SAVE UI
+            document.getElementById('r-analysis').innerHTML = `
+                <div style="font-size: 1.1rem; font-weight: 400; color: #e2e8f0; margin-bottom: 15px; line-height: 1.6;">
+                    ${data.simple_explanation}
+                </div>
+                <div style="font-size: 0.9rem; color: var(--text-muted); border-top: 1px solid rgba(255,255,255,0.1); padding-top: 12px; margin-bottom: 15px;">
+                    <i class="fas fa-stethoscope"></i> <strong>Clinical Note:</strong> ${data.acoustic_analysis}
+                </div>
+                
+                <div class="save-action-card">
+                    <div class="save-header">
+                        <i class="fas fa-cloud-upload-alt" style="color: var(--accent);"></i> Save to Database
+                    </div>
+                    
+                    <div class="save-input-group">
+                        <input type="text" id="bio-patient-name" class="save-input-modern" placeholder="Enter Patient Name...">
+                    </div>
+                    
+                    <div class="save-btn-row">
+                        <button onclick="saveBioToCloud()" class="btn btn-accent">
+                            <i class="fas fa-save" style="margin-right:8px;"></i> Save Record
+                        </button>
+                        <button onclick="resetBioUI()" class="btn" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #cbd5e1;">
+                            Dismiss
+                        </button>
+                    </div>
+                </div>
+            `;
+            document.getElementById('r-action').innerText = data.recommendation;
+        }
+        // Scroll so the big report is centered
+        setTimeout(() => {
+            resultBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 300);
+
+    } catch (error) {
+        statusBox.innerText = "Error: " + error.message;
+    } finally {
+        btn.innerHTML = '<i class="fas fa-wave-square"></i> Run Diagnosis';
+    }
+}
+function resetBioUI() {
+    // Remove the minimized class to expand buttons back
+    document.querySelector('.bio-centered-container').classList.remove('minimized-mode');
+    document.getElementById('result-box').classList.remove('expanded-view');
+    document.getElementById('result-box').style.display = 'none';
+}
+async function uploadAudio() {
+            const fileInput = document.getElementById('audioInput');
+            if (fileInput.files.length === 0) { alert("Please select a file."); return; }
+            processAudio(fileInput.files[0], fileInput.files[0].name);
+        }
+
+        async function processAudio(fileOrBlob, filename) {
+            const statusBox = document.getElementById('r-analysis');
+            statusBox.innerHTML = "<i class='fas fa-spinner fa-spin'></i> Processing audio data...";
+            document.getElementById('result-box').style.display = 'block';
+
+            let formData = new FormData();
+            formData.append("audio", fileOrBlob, filename);
+            formData.append("user_prompt", document.getElementById('audioPrompt').value);
+
+            try {
+                let response = await fetch('/analyze', { method: "POST", body: formData });
+                let data = await response.json();
+                
+                if(data.error) throw new Error(data.error);
+
+                document.getElementById('r-condition').innerText = data.condition || "Unknown";
+                document.getElementById('r-type').innerText = data.disease_type || "N/A";
+                document.getElementById('r-analysis').innerText = data.acoustic_analysis;
+                document.getElementById('r-action').innerText = data.recommendation;
+            } catch (error) {
+                statusBox.innerText = "Error: " + error.message;
+            }
+        }
+
+
+        document.addEventListener('DOMContentLoaded', loadHistory);
+    </script>
+<script type="text/javascript">
+document.addEventListener('DOMContentLoaded', () => {
+    // FORCE ENGLISH DEFAULT
+    localStorage.setItem('user_lang', 'en');
+    window.currentLang = 'en';
+
+    // Update UI Buttons
+    document.querySelectorAll('.lang-btn').forEach(b => {
+        b.classList.remove('active');
+        if (b.getAttribute('data-lang') === 'en') {
+            b.classList.add('active');
+        }
+    });
+    
+    loadHistory();
+});
+
+// 3. Forced Hidden Styles (Injecting via JS to ensure it stays hidden)
+(function() {
+    const style = document.createElement('style');
+    style.innerHTML = `
+        .goog-te-banner-frame, .goog-te-balloon-frame, #goog-gt-tt { display: none !important; }
+        body { top: 0px !important; position: static !important; }
+        .goog-text-highlight { background: none !important; box-shadow: none !important; }
+    `;
+    document.head.appendChild(style);
+})();
+</script>
+
+</body>
+</html>
