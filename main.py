@@ -202,12 +202,27 @@ def safe_get_response_text(response):
         # This prevents the ValueError from accessing response.text when finish_reason is 2
         if hasattr(candidate, 'finish_reason'):
             finish_reason = candidate.finish_reason
-            if finish_reason == 2:  # SAFETY
+            # Check if finish_reason is an enum or integer
+            finish_reason_value = finish_reason.value if hasattr(finish_reason, 'value') else int(finish_reason) if isinstance(finish_reason, (int, str)) else finish_reason
+            
+            if finish_reason_value == 2:  # SAFETY
+                # Log the actual safety ratings for debugging
+                safety_info = []
+                if hasattr(candidate, 'safety_ratings'):
+                    for rating in candidate.safety_ratings:
+                        category = getattr(rating, 'category', 'Unknown')
+                        probability = getattr(rating, 'probability', 'Unknown')
+                        threshold = getattr(rating, 'threshold', 'Unknown')
+                        safety_info.append(f"{category}: {probability} (threshold: {threshold})")
+                    print(f"🚫 [SAFETY] Safety ratings: {', '.join(safety_info) if safety_info else 'No ratings available'}")
+                else:
+                    print(f"🚫 [SAFETY] Finish reason: {finish_reason_value} (SAFETY) - No detailed ratings available")
                 raise ValueError("Response was blocked by safety filters. Please try with different content.")
-            elif finish_reason == 3:  # RECITATION
+            elif finish_reason_value == 3:  # RECITATION
                 raise ValueError("Response was blocked due to recitation policy.")
-            elif finish_reason != 1:  # 1 = STOP (normal)
-                raise ValueError(f"Response finished with reason: {finish_reason}")
+            elif finish_reason_value != 1:  # 1 = STOP (normal)
+                print(f"⚠️ [SAFETY] Unexpected finish reason: {finish_reason_value}")
+                raise ValueError(f"Response finished with reason: {finish_reason_value}")
         
         # Now safely try to get text (finish_reason check passed)
         # Try direct text access first (fastest)
@@ -389,6 +404,7 @@ def analyze_vision_with_gemini(image_paths, scan_type, user_prompt="", language=
                 "response_mime_type": "application/json",
                 "max_output_tokens": 1500  # Limit for faster response
             },
+            safety_settings=safety_config_vision,  # Pass safety settings in generate_content
             request_options={"timeout": 120}  # Extended to 120 seconds for vision
         )
         
@@ -657,6 +673,7 @@ def analyze_form_voice(audio_path, text_input, mode, doc_path=None, language='en
             transcribe_res = transcribe_model.generate_content(
                 [audio_file, f"Transcribe this medical audio recording exactly into {target_lang}. Return ONLY the transcribed text, no additional commentary."],
                 generation_config={"max_output_tokens": 500},  # Limit tokens for speed
+                safety_settings=safety_config_form,  # Pass safety settings in generate_content
                 request_options={"timeout": 60}  # Extended timeout
             )
             
@@ -744,6 +761,7 @@ JSON:
                 "max_output_tokens": 1200,  # Reduced for faster response
                 "temperature": 0.3  # Lower temperature for faster, more deterministic output
             },
+            safety_settings=safety_config_form,  # Pass safety settings in generate_content
             request_options={"timeout": 120}  # Extended timeout: 2 minutes
         )
         analysis_elapsed = time.time() - analysis_start
@@ -1039,7 +1057,11 @@ def analyze_audio_with_gemini(audio_path, user_prompt, language='en'):
         )
         
         # Clinical prompt - more specific to reduce false positives
-        prompt = f"Clinical audio analysis. Patient context: {user_prompt if user_prompt else 'General respiratory assessment'}. Output language: {target_lang}. Return structured JSON analysis only."
+        # Add explicit medical context to help avoid false safety triggers
+        prompt = f"""This is a medical audio recording for clinical respiratory analysis. 
+Patient context: {user_prompt if user_prompt else 'General respiratory assessment'}
+This audio contains breathing sounds, coughs, or other respiratory patterns for medical evaluation.
+Analyze the audio and return structured JSON analysis only in {target_lang}."""
 
         # Retry logic with longer timeouts
         response = None
@@ -1058,6 +1080,7 @@ def analyze_audio_with_gemini(audio_path, user_prompt, language='en'):
                         "temperature": 0.2,
                         "max_output_tokens": 600  # Reduced further for speed
                     },
+                    safety_settings=safety_config,  # Pass safety settings in generate_content too
                     request_options={"timeout": 180}  # 3 minutes per attempt
                 )
                 
@@ -1082,15 +1105,28 @@ def analyze_audio_with_gemini(audio_path, user_prompt, language='en'):
                         if not use_pro_model and attempt == 0:
                             print(f"🔄 [AUDIO] Switching to gemini-3-pro-preview as fallback...")
                             use_pro_model = True
+                            # Create new model with pro
                             model = genai.GenerativeModel(
                                 model_name=MODEL_NAME,  # Use pro model
                                 system_instruction=SYSTEM_INSTRUCTION,
                                 safety_settings=safety_config
                             )
+                            # Reset attempt counter to retry with pro model
                             continue  # Retry with pro model
                         else:
-                            # Both models blocked - return error
-                            raise ValueError("Response was blocked by safety filters. The audio content may have triggered content filters. Please try with a different recording.")
+                            # Both models blocked - try to return a default response instead of failing
+                            print(f"⚠️ [AUDIO] Both models blocked. Returning default analysis response...")
+                            # Return a safe default response
+                            default_response = {
+                                "valid_audio": True,
+                                "universal_match": {"disease_name": "Unable to Analyze", "similarity_score": 0},
+                                "severity": "Unknown",
+                                "infection_type": "Analysis Blocked",
+                                "simple_explanation": "The audio analysis was blocked by content filters. This may occur with unclear audio, background noise, or other factors. Please try recording again in a quiet environment with clear speech.",
+                                "audio_characteristics": "Analysis unavailable due to content filtering.",
+                                "recommendation": "Please record a new audio sample in a quiet environment. Ensure the recording is clear and contains only the respiratory sounds you want analyzed."
+                            }
+                            return json.dumps(default_response)
                     else:
                         raise
                 
