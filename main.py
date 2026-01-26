@@ -228,7 +228,17 @@ def analyze_vision_with_gemini(image_paths, scan_type, user_prompt="", language=
     for ref in uploaded_refs:
         genai.delete_file(ref.name)
 
-    return response.text.strip()
+    # Fix: Check if response has valid parts before accessing .text
+    if response.candidates and len(response.candidates) > 0:
+        candidate = response.candidates[0]
+        if candidate.content and candidate.content.parts:
+            return candidate.content.parts[0].text.strip()
+        else:
+            print("Vision Analysis Error: Response has no valid parts")
+            return json.dumps({"error": "AI response has no valid content"})
+    else:
+        print("Vision Analysis Error: Response has no candidates")
+        return json.dumps({"error": "AI response failed"})
 
 
 @app.route('/save_patient_data', methods=['POST'])
@@ -424,8 +434,17 @@ def analyze_form_voice(audio_path, text_input, mode, doc_path=None, language='en
                 [audio_file, f"Transcribe this audio exactly into {target_lang}. Return ONLY the text."],
             )
             
-            transcribed_text = transcribe_res.text.strip()
-            final_text_input += f" {transcribed_text}"
+            # Fix: Check if response has valid parts before accessing .text
+            if transcribe_res.candidates and len(transcribe_res.candidates) > 0:
+                candidate = transcribe_res.candidates[0]
+                if candidate.content and candidate.content.parts:
+                    transcribed_text = candidate.content.parts[0].text.strip()
+                    final_text_input += f" {transcribed_text}"
+                else:
+                    print("Transcription Error: Response has no valid parts")
+            else:
+                print("Transcription Error: Response has no candidates")
+            
             genai.delete_file(audio_file.name)
             
         except Exception as e:
@@ -438,9 +457,6 @@ def analyze_form_voice(audio_path, text_input, mode, doc_path=None, language='en
         files_to_send.append(doc_file)
 
     # --- STEP 3: LOGIC & ALIGNMENT ---
-    # --- STEP 3: LOGIC & ALIGNMENT ---
-    # --- STEP 3: LOGIC & ALIGNMENT ---
-    # --- STEP 3: LOGIC & ALIGNMENT ---
     EXTREME_PROMPT = f"""
     You are an expert Document Typesetter.
     
@@ -448,14 +464,22 @@ def analyze_form_voice(audio_path, text_input, mode, doc_path=None, language='en
     User Instructions: "{final_text_input}"
     Target Language: {target_lang}
     
-    ### TASK:
-    1. **Text Fields:** Map ONLY spoken values to form fields.
+    ### CRITICAL RULES:
+    1. **ONLY FILL FIELDS EXPLICITLY MENTIONED:** 
+       - Extract field names and values ONLY from the user's instructions: "{final_text_input}"
+       - DO NOT fill fields that are NOT mentioned in the user instructions
+       - DO NOT use placeholder values like "none", "None", "N/A", or empty strings
+       - If a field is not mentioned, DO NOT include it in the output
+    
+    2. **Text Fields:** Map ONLY spoken values to form fields.
        - **LANGUAGE RULE:** The "value" field MUST be in **{target_lang}**. If the user speaks Kannada, the form fill text MUST be in Kannada script. Do NOT translate to English.
        - **CRITICAL:** Start the bounding box (`xmin`) **AFTER** the label text ends. 
        - Leave a **gap** equivalent to 4 letter spaces between the label and the start of your box.
+       - **VALUE REQUIREMENT:** The "value" must be actual data from user instructions, NEVER "none" or empty
        
-    2. **Checkboxes:** Identify checkboxes to TICK (only if explicitly requested).
+    3. **Checkboxes:** Identify checkboxes to TICK (only if explicitly requested in user instructions).
        - Return the EXACT INNER BOUNDARY of the box.
+       - DO NOT check boxes that are not mentioned
     
     ### BOUNDING BOX RULES (`value_rect`):
     - [ymin, xmin, ymax, xmax] must cover the **Blank Writing Space** only.
@@ -463,15 +487,20 @@ def analyze_form_voice(audio_path, text_input, mode, doc_path=None, language='en
     - `ymax` = The visible underline itself (baseline).
     - `xmin` = The start of the empty space (NOT the start of the line).
     
-    ### JSON OUTPUT:
+    ### JSON OUTPUT FORMAT:
     {{
       "visual_fields": [
-        {{ "key": "Field Name", "value": "Text Data", "value_rect": [ymin, xmin, ymax, xmax] }}
+        {{ "key": "Field Name", "value": "Actual Value from User Instructions", "value_rect": [ymin, xmin, ymax, xmax] }}
       ],
       "checkbox_fields": [
         {{ "key": "Checkbox Label", "value_rect": [ymin, xmin, ymax, xmax] }}
       ]
     }}
+    
+    ### REMINDER:
+    - Only include fields that are EXPLICITLY mentioned in: "{final_text_input}"
+    - Never use "none", "None", "N/A", or empty values
+    - If no fields are mentioned, return empty arrays: {{"visual_fields": [], "checkbox_fields": []}}
     """
 
     model = genai.GenerativeModel(model_name="gemini-3-pro-preview")
@@ -481,9 +510,30 @@ def analyze_form_voice(audio_path, text_input, mode, doc_path=None, language='en
             files_to_send + [EXTREME_PROMPT], 
             generation_config={"response_mime_type": "application/json"}
         )
-        data = json.loads(response.text)
+        
+        # Fix: Check if response has valid parts before accessing .text
+        if response.candidates and len(response.candidates) > 0:
+            candidate = response.candidates[0]
+            if candidate.content and candidate.content.parts:
+                response_text = candidate.content.parts[0].text.strip()
+                data = json.loads(response_text)
+            else:
+                print("AI Error: Response has no valid parts")
+                return json.dumps({"visual_fields": [], "confirmation_message": "Error: AI response has no valid content."})
+        else:
+            print("AI Error: Response has no candidates")
+            return json.dumps({"visual_fields": [], "confirmation_message": "Error: AI response failed."})
+        
         if "visual_fields" not in data: data["visual_fields"] = []
         if "checkbox_fields" not in data: data["checkbox_fields"] = []
+        
+        # Fix: Filter out invalid fields (none, None, empty, etc.)
+        invalid_values = ["none", "None", "N/A", "n/a", "null", "Null", ""]
+        data["visual_fields"] = [
+            field for field in data["visual_fields"] 
+            if field.get("value") and str(field.get("value")).strip() not in invalid_values
+        ]
+        
     except Exception as e:
         print(f"AI/JSON Error: {e}")
         return json.dumps({"visual_fields": [], "confirmation_message": "Error processing form logic."})
@@ -695,7 +745,18 @@ def analyze_audio_with_gemini(audio_path, user_prompt, language='en'):
     genai.delete_file(audio_file.name)
     
     try:
-        data = json.loads(response.text)
+        # Fix: Check if response has valid parts before accessing .text
+        if response.candidates and len(response.candidates) > 0:
+            candidate = response.candidates[0]
+            if candidate.content and candidate.content.parts:
+                response_text = candidate.content.parts[0].text.strip()
+                data = json.loads(response_text)
+            else:
+                print("Audio Analysis Error: Response has no valid parts")
+                data = {}
+        else:
+            print("Audio Analysis Error: Response has no candidates")
+            data = {}
         
         # FIX: Handle case where Gemini returns a list instead of a dict
         if isinstance(data, list):
