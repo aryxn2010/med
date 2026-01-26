@@ -2139,12 +2139,7 @@ async function processTextOnly() {
 
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            // Use faster webm/opus encoding for smaller files and faster processing
-            const options = { mimeType: 'audio/webm;codecs=opus' };
-            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-                options.mimeType = 'audio/webm'; // Fallback
-            }
-            mediaRecorder = new MediaRecorder(stream, options);
+            mediaRecorder = new MediaRecorder(stream);
             audioChunks = [];
 
             // UI Updates: HIDE TEXT, SHOW WAVE
@@ -2154,28 +2149,15 @@ async function processTextOnly() {
             // Start The Scrolling Wave
             startScrollingWave(stream, 'clinical-wave');
 
-            // Collect data more frequently for faster processing
-            mediaRecorder.ondataavailable = event => {
-                if (event.data.size > 0) audioChunks.push(event.data);
-            };
-            
-            let recordingStartTime = Date.now();
-            let maxRecordingDuration = 60000; // 60 seconds max
+            mediaRecorder.ondataavailable = event => audioChunks.push(event.data);
             
             mediaRecorder.onstop = () => {
                 // STOP Wave, Show Processing Text
                 stopScrollingWave('clinical-wave');
                 liveText.style.display = 'block'; // Bring text back
+                liveText.innerHTML = "<i class='fas fa-cog fa-spin'></i> Processing...";
                 
-                const duration = Date.now() - recordingStartTime;
-                if (duration > maxRecordingDuration) {
-                    liveText.innerHTML = "<i class='fas fa-exclamation-triangle'></i> Long recording - processing may take longer...";
-                } else {
-                    liveText.innerHTML = "<i class='fas fa-cog fa-spin'></i> Processing...";
-                }
-                
-                // Use webm for faster upload and processing
-                const audioBlob = new Blob(audioChunks, { type: options.mimeType || 'audio/webm' });
+                const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
                 processFormVoice(audioBlob, ""); 
                 
                 textToggleBtn.disabled = false;
@@ -2292,11 +2274,7 @@ async function processFormVoice(blob, textHint = "") {
     status.innerHTML = "<i class='fas fa-circle-notch fa-spin'></i> AI Extracting & Processing...";
     
     let fd = new FormData();
-    if(blob) {
-        // Use appropriate extension based on blob type
-        const ext = blob.type.includes('webm') ? 'webm' : 'wav';
-        fd.append("audio", blob, `response.${ext}`);
-    }
+    if(blob) fd.append("audio", blob, "response.wav");
     if(textHint) fd.append("text_input", textHint); 
     fd.append("language", window.currentLang); // Add this line here
     
@@ -3358,49 +3336,22 @@ async function toggleRecording() {
             viz.style.display = 'flex'; // Show visualizer
             startScrollingWave(stream, 'bio-visualizer'); 
 
-            // Use faster webm/opus encoding for smaller files and faster processing
-            const options = { mimeType: 'audio/webm;codecs=opus' };
-            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-                options.mimeType = 'audio/webm'; // Fallback
-            }
-            mediaRecorder = new MediaRecorder(stream, options);
+            mediaRecorder = new MediaRecorder(stream);
             audioChunks = [];
             
-            // Collect data more frequently for faster processing
-            mediaRecorder.ondataavailable = event => {
-                if (event.data.size > 0) audioChunks.push(event.data);
-            };
-            
-            let recordingStartTime = Date.now();
-            let maxRecordingDuration = 60000; // 60 seconds max
-            
-            // Auto-stop timer
-            const autoStopTimer = setTimeout(() => {
-                if (mediaRecorder && mediaRecorder.state === 'recording') {
-                    mediaRecorder.stop();
-                    alert("Recording stopped automatically at 60 seconds for optimal processing speed.");
-                }
-            }, maxRecordingDuration);
+            mediaRecorder.ondataavailable = event => audioChunks.push(event.data);
             
             mediaRecorder.onstop = () => {
-                clearTimeout(autoStopTimer); // Clear timer if stopped manually
                 stopScrollingWave('bio-visualizer'); 
                 viz.style.display = 'none'; // Hide visualizer on stop
 
-                const duration = Date.now() - recordingStartTime;
-                
-                // Warn if recording is too long
-                if (duration > maxRecordingDuration) {
-                    alert(`Recording is ${(duration/1000).toFixed(1)}s. For best results, keep recordings under 60 seconds.`);
-                }
-
-                // STORE BLOB, DO NOT SEND YET - Use webm for faster processing
-                storedAudioData = new Blob(audioChunks, { type: options.mimeType || 'audio/webm' });
+                // STORE BLOB, DO NOT SEND YET
+                storedAudioData = new Blob(audioChunks, { type: 'audio/wav' });
                 
                 // UI: Reset Button
                 btn.classList.remove('recording');
                 icon.className = "fas fa-check";
-                text.innerText = `Audio Captured (${(duration/1000).toFixed(1)}s)`;
+                text.innerText = "Audio Captured";
                 
                 // ENABLE NEXT STEP
                 enableContextStep();
@@ -3477,9 +3428,7 @@ async function submitBioAnalysis() {
     resultBox.style.display = 'block';
 
     let formData = new FormData();
-    // Use appropriate extension based on blob type
-    const ext = storedAudioData.type && storedAudioData.type.includes('webm') ? 'webm' : 'wav';
-    let filename = storedAudioData.name || `live_record.${ext}`;
+    let filename = storedAudioData.name || "live_record.wav";
     
     formData.append("audio", storedAudioData, filename);
     formData.append("user_prompt", document.getElementById('audioPrompt').value);

@@ -2,7 +2,6 @@ import os
 import time
 from flask import Flask, render_template, request, jsonify
 import google.generativeai as genai
-from google.generativeai.types import HarmCategory, HarmBlockThreshold
 from werkzeug.utils import secure_filename
 from datetime import datetime
 import json
@@ -12,7 +11,6 @@ import numpy as np # Ensure numpy is imported
 import os
 from PIL import Image, ImageDraw, ImageFont
 from flask import send_from_directory
-import re
 # --- CONFIGURATION ---
 import requests
 import warnings
@@ -36,8 +34,6 @@ api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
 if api_key:
     os.environ["GOOGLE_API_KEY"] = api_key
     genai.configure(api_key=api_key)
-    # Configure global safety settings to be most permissive
-    print("✅ Gemini API configured with permissive safety settings")
 else:
     print("❌ CRITICAL ERROR: API Key not found! Set GEMINI_API_KEY in .env")
 
@@ -81,281 +77,7 @@ except Exception as e:
     
     
 print("-------------------------------------\n")    
-MODEL_NAME = "gemini-3-pro-preview"
-
-def clean_json_response(text):
-    """
-    Clean and fix malformed JSON responses from Gemini.
-    Handles unterminated strings, unescaped quotes, and other common issues.
-    """
-    if not text:
-        return None
-    
-    # Remove markdown code blocks if present
-    text = re.sub(r'```json\s*', '', text)
-    text = re.sub(r'```\s*', '', text)
-    text = text.strip()
-    
-    # Try to find JSON object boundaries
-    start_idx = text.find('{')
-    end_idx = text.rfind('}')
-    
-    if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
-        text = text[start_idx:end_idx + 1]
-    elif start_idx != -1:
-        # If we have start but no end, try to find a reasonable end
-        # Look for the last closing brace or add one
-        text = text[start_idx:]
-        if not text.endswith('}'):
-            # Try to balance braces
-            open_count = text.count('{')
-            close_count = text.count('}')
-            if open_count > close_count:
-                text += '}' * (open_count - close_count)
-    
-    # Fix unterminated strings - more robust approach
-    # Process character by character to properly handle string boundaries
-    result = []
-    in_string = False
-    escape_next = False
-    i = 0
-    
-    while i < len(text):
-        char = text[i]
-        
-        if escape_next:
-            result.append(char)
-            escape_next = False
-            i += 1
-            continue
-        
-        if char == '\\':
-            result.append(char)
-            escape_next = True
-            i += 1
-            continue
-        
-        if char == '"':
-            result.append(char)
-            in_string = not in_string
-            i += 1
-            continue
-        
-        result.append(char)
-        i += 1
-    
-    # If we ended in a string, close it
-    if in_string:
-        result.append('"')
-    
-    text = ''.join(result)
-    
-    # Try to parse - if it fails, try more aggressive cleaning
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError as e:
-        # More aggressive cleaning: remove trailing incomplete parts
-        # Find the error position and truncate there
-        error_pos = getattr(e, 'pos', None)
-        if error_pos and error_pos < len(text):
-            # Try truncating at the error position and finding the last complete JSON object
-            truncated = text[:error_pos]
-            # Find the last complete key-value pair or object
-            last_comma = truncated.rfind(',')
-            last_colon = truncated.rfind(':')
-            
-            if last_comma > last_colon and last_comma > 0:
-                # Remove the incomplete part after last comma
-                truncated = truncated[:last_comma]
-                # Try to close the JSON properly
-                if truncated.count('{') > truncated.count('}'):
-                    truncated += '}'
-                try:
-                    return json.loads(truncated + '}')
-                except:
-                    pass
-        
-        # Last resort: try to extract JSON using regex
-        json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', text, re.DOTALL)
-        if json_match:
-            try:
-                cleaned = json_match.group(0)
-                # Ensure it's properly closed
-                if cleaned.count('{') > cleaned.count('}'):
-                    cleaned += '}' * (cleaned.count('{') - cleaned.count('}'))
-                return json.loads(cleaned)
-            except:
-                pass
-        
-        return None
-
-def safe_get_response_text(response):
-    """
-    Safely extract text from Gemini response, handling safety filters and errors.
-    Tries to extract content even when safety filters trigger.
-    """
-    try:
-        # Check if response has candidates
-        if not hasattr(response, 'candidates') or not response.candidates:
-            raise ValueError("No candidates in response")
-        
-        candidate = response.candidates[0]
-        
-        # Try to extract text FIRST, even if finish_reason indicates safety block
-        # This allows us to get partial responses
-        text_parts = []
-        
-        # Method 1: Try direct text access
-        try:
-            if hasattr(response, 'text'):
-                text = response.text
-                if text and text.strip():
-                    return text
-        except (ValueError, AttributeError):
-            pass
-        
-        # Method 2: Try to get from candidate content (works even with safety blocks)
-        if hasattr(candidate, 'content') and candidate.content:
-            if hasattr(candidate.content, 'parts'):
-                for part in candidate.content.parts:
-                    if hasattr(part, 'text') and part.text:
-                        text_parts.append(part.text)
-                    # Also try to get text from other attributes
-                    if hasattr(part, 'inline_data'):
-                        # Skip binary data
-                        continue
-        
-        # If we got text parts, return them even if finish_reason is 2
-        if text_parts:
-            combined_text = ''.join(text_parts)
-            if combined_text.strip():
-                # Check finish reason but don't block if we have text
-                if hasattr(candidate, 'finish_reason'):
-                    finish_reason = candidate.finish_reason
-                    finish_reason_value = finish_reason.value if hasattr(finish_reason, 'value') else int(finish_reason) if isinstance(finish_reason, (int, str)) else finish_reason
-                    if finish_reason_value == 2:
-                        print(f"⚠️ [SAFETY] Safety filter triggered but extracted text anyway ({len(combined_text)} chars)")
-                return combined_text
-        
-        # If no text found, check finish reason for error reporting
-        if hasattr(candidate, 'finish_reason'):
-            finish_reason = candidate.finish_reason
-            finish_reason_value = finish_reason.value if hasattr(finish_reason, 'value') else int(finish_reason) if isinstance(finish_reason, (int, str)) else finish_reason
-            
-            if finish_reason_value == 2:  # SAFETY
-                # Log but don't block - try one more time with alternative method
-                safety_info = []
-                if hasattr(candidate, 'safety_ratings'):
-                    for rating in candidate.safety_ratings:
-                        category = getattr(rating, 'category', 'Unknown')
-                        probability = getattr(rating, 'probability', 'Unknown')
-                        threshold = getattr(rating, 'threshold', 'Unknown')
-                        safety_info.append(f"{category}: {probability} (threshold: {threshold})")
-                    print(f"🚫 [SAFETY] Safety ratings: {', '.join(safety_info) if safety_info else 'No ratings available'}")
-                
-                # Last attempt: try to get any available text from the response object using multiple methods
-                extraction_methods = [
-                    # Method 1: Try _raw_response
-                    lambda: getattr(response, '_raw_response', None),
-                    # Method 2: Try _response
-                    lambda: getattr(response, '_response', None),
-                    # Method 3: Try direct attribute access
-                    lambda: response if hasattr(response, 'candidates') else None,
-                ]
-                
-                for method in extraction_methods:
-                    try:
-                        raw = method()
-                        if raw:
-                            # Try to extract from raw response
-                            if hasattr(raw, 'candidates') and raw.candidates:
-                                cand = raw.candidates[0]
-                                if hasattr(cand, 'content') and cand.content:
-                                    if hasattr(cand.content, 'parts'):
-                                        for part in cand.content.parts:
-                                            if hasattr(part, 'text') and part.text:
-                                                print(f"✅ [SAFETY] Extracted text via raw response method ({len(part.text)} chars)")
-                                                return part.text
-                            # Try alternative structure
-                            if hasattr(raw, 'candidates'):
-                                for cand in raw.candidates:
-                                    if hasattr(cand, 'content'):
-                                        content = cand.content
-                                        if hasattr(content, 'parts'):
-                                            for part in content.parts:
-                                                if hasattr(part, 'text') and part.text:
-                                                    print(f"✅ [SAFETY] Extracted text via alternative method ({len(part.text)} chars)")
-                                                    return part.text
-                    except Exception as e:
-                        continue  # Try next method
-                
-                # Final attempt: Try to access response through any available method
-                # Use reflection to access private attributes
-                try:
-                    # Try all possible attribute names
-                    for attr_name in dir(response):
-                        if not attr_name.startswith('__'):
-                            try:
-                                attr_value = getattr(response, attr_name)
-                                if hasattr(attr_value, 'candidates'):
-                                    for cand in attr_value.candidates:
-                                        if hasattr(cand, 'content') and cand.content:
-                                            if hasattr(cand.content, 'parts'):
-                                                for part in cand.content.parts:
-                                                    if hasattr(part, 'text') and part.text:
-                                                        print(f"✅ [SAFETY] Extracted via reflection method ({len(part.text)} chars)")
-                                                        return part.text
-                            except:
-                                continue
-                except:
-                    pass
-                
-                # If all extraction methods fail, don't raise error - return default response
-                # This allows processing to continue instead of failing
-                print(f"⚠️ [SAFETY] Safety filter active but this is medical content - using workaround")
-                # Return a valid JSON structure that allows processing to continue
-                # The analysis will proceed with this default, which is better than failing completely
-                return json.dumps({
-                    "valid_audio": True,
-                    "universal_match": {"disease_name": "Respiratory Assessment", "similarity_score": 0},
-                    "severity": "Unknown",
-                    "infection_type": "Under Analysis",
-                    "simple_explanation": "Audio analysis completed. The recording contains respiratory sounds that require clinical evaluation. Please consult with a healthcare provider for detailed assessment.",
-                    "audio_characteristics": "Respiratory audio patterns detected. Full analysis may require additional clinical context.",
-                    "recommendation": "Please consult a healthcare provider for comprehensive respiratory evaluation. Record again in a quiet environment if needed."
-                })
-            elif finish_reason_value == 3:  # RECITATION
-                # Return default instead of raising error
-                print(f"⚠️ [SAFETY] Recitation policy triggered - using default response")
-                return json.dumps({
-                    "valid_audio": True,
-                    "universal_match": {"disease_name": "Respiratory Assessment", "similarity_score": 0},
-                    "severity": "Unknown",
-                    "infection_type": "Under Analysis",
-                    "simple_explanation": "Audio analysis completed. Please consult with a healthcare provider for detailed assessment.",
-                    "audio_characteristics": "Respiratory audio patterns detected.",
-                    "recommendation": "Please consult a healthcare provider for comprehensive respiratory evaluation."
-                })
-            elif finish_reason_value != 1:  # 1 = STOP (normal)
-                print(f"⚠️ [SAFETY] Unexpected finish reason: {finish_reason_value} - using default response")
-                return json.dumps({
-                    "valid_audio": True,
-                    "universal_match": {"disease_name": "Respiratory Assessment", "similarity_score": 0},
-                    "severity": "Unknown",
-                    "infection_type": "Under Analysis",
-                    "simple_explanation": "Audio analysis completed. Please consult with a healthcare provider for detailed assessment.",
-                    "audio_characteristics": "Respiratory audio patterns detected.",
-                    "recommendation": "Please consult a healthcare provider for comprehensive respiratory evaluation."
-                })
-        
-        raise ValueError("Could not extract text from response - no valid parts found")
-        
-    except ValueError:
-        # Re-raise ValueError as-is (these are our custom errors)
-        raise
-    except Exception as e:
-        # Wrap other exceptions
-        raise ValueError(f"Error extracting response text: {str(e)}") 
+MODEL_NAME = "gemini-3-pro-preview" 
 import urllib.request
 app = Flask(__name__)
 UPLOAD_FOLDER = 'uploads'
@@ -363,26 +85,29 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 import uuid # <--- ADD THIS AT THE TOP WITH OTHER IMPORTS
 # --- UPDATED SYSTEM INSTRUCTION (UNIVERSAL PATHOLOGICAL MATCHER) ---
 # --- UPDATED SYSTEM INSTRUCTION (SIMPLE & PATIENT-FRIENDLY) ---
-SYSTEM_INSTRUCTION = """You are a clinical audio analysis expert for respiratory medicine. Your task is to analyze audio recordings of breathing sounds, coughs, and respiratory patterns to identify potential respiratory conditions.
+SYSTEM_INSTRUCTION = """
+You are Sahayak.ai, a compassionate medical AI assistant.
+Your task is to analyze audio and identify respiratory conditions using Universal Vector Matching.
 
-CLINICAL ANALYSIS PROTOCOL:
-1. Listen carefully to the audio for characteristic sounds: wheezing (asthma), stridor (croup), crackles (pneumonia), dry/hacking coughs, wet/productive coughs, shortness of breath patterns.
-2. Match audio patterns to known clinical presentations: Croup (barking seal-like cough), Asthma (wheezing, high-pitched sounds), Pneumonia (crackles, wet cough), Bronchitis (productive cough), Upper Respiratory Infection (nasal congestion sounds).
-3. Calculate internal confidence score (0-100) based on pattern matching accuracy.
-4. Provide clear, accurate medical assessment in simple language for patients.
+### ANALYSIS PROTOCOL:
+1. **Listen & Match**: Compare the audio to your internal database of disease sounds (Croup, Asthma, Pneumonia, etc.).
+2. **Internal Scoring**: Calculate a match confidence (0-100) internally to ensure accuracy, but **DO NOT** show this number to the user.
+3. **Simplify**: Translate all findings into simple, easy-to-understand language for a non-medical user.
 
-OUTPUT FORMAT (Strict JSON):
+### OUTPUT FORMAT (Strict JSON):
 {
   "valid_audio": true,
-  "universal_match": {"disease_name": "Specific Clinical Condition Name", "similarity_score": 85},
-  "severity": "Low/Moderate/High",
-  "infection_type": "Viral/Bacterial/Chronic/Irritation/Allergic",
-  "simple_explanation": "Clear explanation of what the condition is and what was detected in the audio, in plain language without medical jargon.",
-  "audio_characteristics": "Detailed description of specific sounds heard: type of cough, breathing patterns, any distinctive sounds (wheezing, stridor, crackles, etc.).",
-  "recommendation": "Specific, actionable medical advice based on the findings."
+  "universal_match": {
+    "disease_name": "Medical Name (e.g., Croup)",
+    "similarity_score": 95
+  },
+  "severity": "Moderate / High / Low",
+  "infection_type": "Viral / Bacterial / Chronic / Irritation",
+  "simple_explanation": "A direct, clear explanation of what this condition is. Do NOT use quotes. Do NOT mention percentages. Example: 'This sounds like Croup, which is usually caused by a virus and causes swelling in the throat.'",
+  "audio_characteristics": "What did you hear? Explain in plain English. Example: 'We detected a distinctive barking sound, similar to a seal, and some whistling noises when breathing in.'",
+  "recommendation": "Simple, actionable advice. Example: 'Keep the patient calm and try sitting in a steamy bathroom to help them breathe.'"
 }
-
-CRITICAL: Be accurate and specific. Identify the actual respiratory condition based on audio patterns."""
+"""
 
 MEDICINE_SYSTEM_INSTRUCTION = f"""
 You are an AI Clinical Expert. 
@@ -485,10 +210,7 @@ def analyze_vision_with_gemini(image_paths, scan_type, user_prompt="", language=
             content_payload.append(img_file)
             uploaded_refs.append(img_file)
     
-    # Add strong medical context to avoid false safety triggers
-    content_payload.append(f"MEDICAL IMAGE ANALYSIS REQUEST - CLINICAL EVALUATION")
     content_payload.append(f"User Context: {user_prompt}")
-    content_payload.append(f"This is a legitimate medical image analysis for clinical diagnosis purposes. The images contain medical/clinical content for patient care evaluation.")
     
     # Inject Language Instruction
     content_payload.append(f"CRITICAL: All text values in the JSON output MUST be in {target_lang}. Translate medical terms accurately into {target_lang}.")
@@ -496,113 +218,17 @@ def analyze_vision_with_gemini(image_paths, scan_type, user_prompt="", language=
     if not image_paths:
         content_payload.append(f"SYSTEM NOTICE: No image provided. Answer strictly based on text in {target_lang}.")
 
-    safety_config_vision = {
-        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE  # <--- CHANGED
-    }
+    model = genai.GenerativeModel(model_name=MODEL_NAME, system_instruction=sys_instruction)
     
-    # Try models in order: pro first for accuracy, then flash
-    models_to_try = [MODEL_NAME, "gemini-3-flash-preview"]
-    response = None
-    response_text = None
-    
-    for model_idx, model_name in enumerate(models_to_try):
-        try:
-            print(f"🤖 [VISION] Using {model_name} for vision analysis (attempt {model_idx + 1}/{len(models_to_try)})...")
-            model = genai.GenerativeModel(
-                model_name=model_name,
-                system_instruction=sys_instruction,
-                safety_settings=safety_config_vision
-            )
-            
-            response = model.generate_content(
-                content_payload,
-                generation_config={
-                    "response_mime_type": "application/json",
-                    "max_output_tokens": 1500
-                },
-                safety_settings=safety_config_vision,
-                request_options={"timeout": 120}
-            )
-            
-            # Verify response is valid - safe_get_response_text now returns default JSON instead of raising errors
-            response_text = safe_get_response_text(response)
-            if response_text and response_text.strip():
-                break  # Success - exit loop
-            else:
-                # Empty response - try next model
-                if model_idx < len(models_to_try) - 1:
-                    print(f"⚠️ [VISION] {model_name} returned empty, trying next model...")
-                    continue
-                else:
-                    # All models failed - use default
-                    response_text = json.dumps({
-                        "condition_name": "Analysis Unavailable",
-                        "category": "Medical",
-                        "severity": "Unknown",
-                        "answer_to_user": "Image analysis encountered an issue. Please try again with a different image.",
-                        "recommendation": "Please upload a clear image and try again."
-                    })
-                    break
-                    
-        except ValueError as ve:
-            error_msg = str(ve).lower()
-            if ("safety" in error_msg or "blocked" in error_msg) and model_idx < len(models_to_try) - 1:
-                print(f"🚫 [VISION] {model_name} blocked, trying next model...")
-                continue
-            else:
-                # Clean up uploaded files on error
-                for ref in uploaded_refs:
-                    try:
-                        genai.delete_file(ref.name)
-                    except:
-                        pass
-                raise
-        except Exception as e:
-            if model_idx < len(models_to_try) - 1:
-                print(f"⚠️ [VISION] Error with {model_name}, trying next model: {e}")
-                continue
-            # Clean up uploaded files on error
-            for ref in uploaded_refs:
-                try:
-                    genai.delete_file(ref.name)
-                except:
-                    pass
-            raise  # Re-raise to be handled by caller
-    
-    if not response_text:
-        # Clean up and raise error
-        for ref in uploaded_refs:
-            try:
-                genai.delete_file(ref.name)
-            except:
-                pass
-        raise ValueError("All models blocked or failed for vision analysis")
+    response = model.generate_content(
+        content_payload,
+        generation_config={"response_mime_type": "application/json"}
+    )
     
     for ref in uploaded_refs:
-        try:
-            genai.delete_file(ref.name)
-        except:
-            pass
+        genai.delete_file(ref.name)
 
-    # Safely extract and clean response
-    try:
-        response_text = safe_get_response_text(response)
-        # Try to parse as JSON and re-stringify to ensure it's valid
-        try:
-            data = json.loads(response_text)
-            return json.dumps(data)  # Return clean JSON
-        except json.JSONDecodeError:
-            # If not JSON, try to clean it
-            cleaned = clean_json_response(response_text)
-            if cleaned:
-                return json.dumps(cleaned)
-            # Fallback: return cleaned text
-            return response_text.strip()
-    except ValueError as e:
-        raise ValueError(f"Vision analysis failed: {e}")
+    return response.text.strip()
 
 
 @app.route('/save_patient_data', methods=['POST'])
@@ -784,242 +410,83 @@ def analyze_form_voice(audio_path, text_input, mode, doc_path=None, language='en
     lang_map = {"en": "English", "hi": "Hindi", "kn": "Kannada"}
     target_lang = lang_map.get(language, "English")
 
-    # --- STEP 1: TRANSCRIBE AUDIO (OPTIMIZED) ---
-    print(f"🎤 [FORM] Starting form voice processing...")
-    form_start = time.time()
+    # --- STEP 1: TRANSCRIBE AUDIO ---
     final_text_input = text_input or ""
-    audio_file = None
     
     if audio_path:
         try:
-            print(f"📤 [FORM] Uploading audio for transcription...")
-            # Upload audio file with extended timeout
             audio_file = genai.upload_file(path=audio_path)
-            upload_timeout = 60  # Extended timeout
-            upload_start = time.time()
+            while audio_file.state.name == "PROCESSING": time.sleep(1)
             
-            while audio_file.state.name == "PROCESSING":
-                elapsed = time.time() - upload_start
-                if elapsed > upload_timeout:
-                    raise TimeoutError(f"Audio upload timeout after {elapsed:.1f}s")
-                time.sleep(0.5)  # Check every 0.5s
-                audio_file = genai.get_file(audio_file.name)
+            transcribe_model = genai.GenerativeModel("gemini-3-flash-preview")
             
-            upload_elapsed = time.time() - upload_start
-            print(f"✅ [FORM] Audio uploaded in {upload_elapsed:.1f}s")
+            transcribe_res = transcribe_model.generate_content(
+                [audio_file, f"Transcribe this audio exactly into {target_lang}. Return ONLY the text."],
+            )
             
-            safety_config_form = {
-                HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-                HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-                HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-                HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE
-            }
-            
-            # Try models for transcription: pro first, then flash
-            transcribe_models = [MODEL_NAME, "gemini-3-flash-preview"]
-            transcribed_text = ""
-            
-            for transcribe_idx, transcribe_model_name in enumerate(transcribe_models):
-                try:
-                    print(f"🎙️ [FORM] Transcribing with {transcribe_model_name} (attempt {transcribe_idx + 1}/{len(transcribe_models)})...")
-                    transcribe_model = genai.GenerativeModel(
-                        transcribe_model_name,
-                        safety_settings=safety_config_form
-                    )
-                    
-                    transcribe_res = transcribe_model.generate_content(
-                        [audio_file, f"MEDICAL TRANSCRIPTION REQUEST: This is a legitimate medical audio recording for clinical documentation. Transcribe the spoken words exactly into {target_lang}. Return ONLY the transcribed text, no additional commentary. This is medical content for patient care purposes."],
-                        generation_config={"max_output_tokens": 500},
-                        safety_settings=safety_config_form,
-                        request_options={"timeout": 60}
-                    )
-                    
-                    # Safely extract text - safe_get_response_text now returns default JSON instead of raising errors
-                    response_text = safe_get_response_text(transcribe_res)
-                    # For transcription, we expect plain text, not JSON
-                    # If we got JSON (default response), extract text from it or use empty
-                    if response_text and response_text.strip():
-                        # Check if it's JSON (default response) or actual transcription
-                        try:
-                            json_data = json.loads(response_text)
-                            # It's a default JSON response, not transcription
-                            transcribed_text = ""
-                            print(f"⚠️ [FORM] Transcription returned default JSON, using empty transcription")
-                            if transcribe_idx < len(transcribe_models) - 1:
-                                continue  # Try next model
-                            else:
-                                break
-                        except json.JSONDecodeError:
-                            # It's actual transcription text
-                            transcribed_text = response_text.strip()
-                            if transcribed_text:
-                                print(f"✅ [FORM] Transcription successful: '{transcribed_text[:50]}...'")
-                                break  # Success - exit loop
-                    else:
-                        # Empty response - try next model
-                        if transcribe_idx < len(transcribe_models) - 1:
-                            print(f"⚠️ [FORM] {transcribe_model_name} returned empty, trying next model...")
-                            continue
-                        else:
-                            transcribed_text = ""
-                            break
-                except Exception as e:
-                    if transcribe_idx < len(transcribe_models) - 1:
-                        print(f"⚠️ [FORM] Error with {transcribe_model_name}, trying next: {e}")
-                        continue
-                    else:
-                        print(f"⚠️ [FORM] All transcription models failed: {e}")
-                        transcribed_text = ""
-            # Add transcribed text to final input if available
-            if transcribed_text:
-                final_text_input += f" {transcribed_text}"
-                transcribe_elapsed = time.time() - upload_start
-                print(f"✅ [FORM] Transcription complete in {transcribe_elapsed:.1f}s: '{transcribed_text[:50]}...'")
-            else:
-                print(f"⚠️ [FORM] No transcription available, using text input only")
-            
-            # Clean up immediately after transcription
-            if audio_file:
-                try:
-                    genai.delete_file(audio_file.name)
-                except:
-                    pass
+            transcribed_text = transcribe_res.text.strip()
+            final_text_input += f" {transcribed_text}"
+            genai.delete_file(audio_file.name)
             
         except Exception as e:
-            print(f"❌ [FORM] Transcription Error: {e}")
-            # Clean up on error
-            if audio_file:
-                try:
-                    genai.delete_file(audio_file.name)
-                except:
-                    pass
+            print(f"Transcription Error: {e}")
 
-    # --- STEP 2: PREPARE IMAGE (OPTIMIZED) ---
+    # --- STEP 2: PREPARE IMAGE ---
     if doc_path:
         doc_file = genai.upload_file(path=doc_path)
-        upload_timeout = 25
-        upload_start = time.time()
-        
-        while doc_file.state.name == "PROCESSING":
-            if time.time() - upload_start > upload_timeout:
-                raise TimeoutError("Document upload timeout")
-            time.sleep(0.3)  # Faster checking
-            doc_file = genai.get_file(doc_file.name)
-        
+        while doc_file.state.name == "PROCESSING": time.sleep(1)
         files_to_send.append(doc_file)
 
-    # --- STEP 3: LOGIC & ALIGNMENT (OPTIMIZED) ---
-    # Enhanced prompt with medical context
-    EXTREME_PROMPT = f"""MEDICAL FORM PROCESSING REQUEST - DOCUMENT TYPESETTER
-
-This is a legitimate medical form processing request. The user input "{final_text_input}" contains medical/patient information for form filling purposes.
-
-TASK:
-1. Text Fields: Map spoken values to form fields. "value" must be in {target_lang}. Start xmin AFTER label ends (4 spaces gap).
-2. Checkboxes: Return exact inner boundary if requested.
-
-BOUNDING BOX: [ymin, xmin, ymax, xmax] = blank writing space only. ymax = baseline.
-
-This is medical documentation processing - legitimate clinical use case.
-
-JSON OUTPUT:
-{{
-  "visual_fields": [{{"key": "Field", "value": "Data", "value_rect": [ymin, xmin, ymax, xmax]}}],
-  "checkbox_fields": [{{"key": "Label", "value_rect": [ymin, xmin, ymax, xmax]}}]
-}}"""
-
-    # Configure safety settings for form analysis
-    safety_config_form = {
-        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE
-    }
+    # --- STEP 3: LOGIC & ALIGNMENT ---
+    # --- STEP 3: LOGIC & ALIGNMENT ---
+    # --- STEP 3: LOGIC & ALIGNMENT ---
+    # --- STEP 3: LOGIC & ALIGNMENT ---
+    EXTREME_PROMPT = f"""
+    You are an expert Document Typesetter.
     
-    # Try models in order: pro first for accuracy, then flash
-    models_to_try = [MODEL_NAME, "gemini-3-flash-preview"]
-    response = None
-    response_text = None
+    ### INPUT:
+    User Instructions: "{final_text_input}"
+    Target Language: {target_lang}
     
-    for model_idx, model_name in enumerate(models_to_try):
-        try:
-            print(f"🤖 [FORM] Using {model_name} for form analysis (attempt {model_idx + 1}/{len(models_to_try)})...")
-            model = genai.GenerativeModel(
-                model_name=model_name,
-                safety_settings=safety_config_form
-            )
-            
-            analysis_start = time.time()
-            response = model.generate_content(
-                files_to_send + [EXTREME_PROMPT], 
-                generation_config={
-                    "response_mime_type": "application/json",
-                    "max_output_tokens": 1200,
-                    "temperature": 0.3
-                },
-                safety_settings=safety_config_form,
-                request_options={"timeout": 120}
-            )
-            analysis_elapsed = time.time() - analysis_start
-            print(f"✅ [FORM] Form analysis complete in {analysis_elapsed:.1f}s")
-            
-            # Safely extract and parse response - safe_get_response_text now returns default JSON instead of raising errors
-            response_text = safe_get_response_text(response)
-            if response_text and response_text.strip():
-                try:
-                    data = json.loads(response_text)
-                    break  # Success - exit loop
-                except json.JSONDecodeError as e:
-                    # If JSON parsing fails, try to clean it
-                    print(f"⚠️ [FORM] JSON parse error, attempting to clean: {e}")
-                    data = clean_json_response(response_text)
-                    if data is None:
-                        # Try next model if available
-                        if model_idx < len(models_to_try) - 1:
-                            print(f"⚠️ [FORM] {model_name} returned invalid JSON, trying next model...")
-                            continue
-                        else:
-                            # Use default data structure
-                            data = {"visual_fields": [], "checkbox_fields": []}
-                            break
-                    else:
-                        break  # Success after cleaning
-            else:
-                # Empty response - try next model
-                if model_idx < len(models_to_try) - 1:
-                    print(f"⚠️ [FORM] {model_name} returned empty, trying next model...")
-                    continue
-                else:
-                    data = {"visual_fields": [], "checkbox_fields": []}
-                    break
-        except ValueError as ve:
-            error_msg = str(ve).lower()
-            if ("safety" in error_msg or "blocked" in error_msg) and model_idx < len(models_to_try) - 1:
-                print(f"🚫 [FORM] {model_name} blocked, trying next model...")
-                continue
-            else:
-                raise ValueError(f"Form analysis response error: {ve}")
-        except Exception as e:
-            if model_idx < len(models_to_try) - 1:
-                print(f"⚠️ [FORM] Error with {model_name}, trying next model: {e}")
-                continue
-            raise
+    ### TASK:
+    1. **Text Fields:** Map ONLY spoken values to form fields.
+       - **LANGUAGE RULE:** The "value" field MUST be in **{target_lang}**. If the user speaks Kannada, the form fill text MUST be in Kannada script. Do NOT translate to English.
+       - **CRITICAL:** Start the bounding box (`xmin`) **AFTER** the label text ends. 
+       - Leave a **gap** equivalent to 4 letter spaces between the label and the start of your box.
+       
+    2. **Checkboxes:** Identify checkboxes to TICK (only if explicitly requested).
+       - Return the EXACT INNER BOUNDARY of the box.
     
-    # Check if we got a valid response and data
-    if not response_text or data is None:
-        # Clean up files on error
-        for f in files_to_send:
-            try:
-                genai.delete_file(f.name)
-            except:
-                pass
-        return json.dumps({"visual_fields": [], "confirmation_message": "All models blocked or failed for form analysis. Please try again."})
+    ### BOUNDING BOX RULES (`value_rect`):
+    - [ymin, xmin, ymax, xmax] must cover the **Blank Writing Space** only.
+    - `ymin` = Top of the handwriting line.
+    - `ymax` = The visible underline itself (baseline).
+    - `xmin` = The start of the empty space (NOT the start of the line).
     
-    # Ensure data structure is complete
-    if "visual_fields" not in data: 
-        data["visual_fields"] = []
-    if "checkbox_fields" not in data: 
-        data["checkbox_fields"] = []
+    ### JSON OUTPUT:
+    {{
+      "visual_fields": [
+        {{ "key": "Field Name", "value": "Text Data", "value_rect": [ymin, xmin, ymax, xmax] }}
+      ],
+      "checkbox_fields": [
+        {{ "key": "Checkbox Label", "value_rect": [ymin, xmin, ymax, xmax] }}
+      ]
+    }}
+    """
+
+    model = genai.GenerativeModel(model_name="gemini-3-pro-preview")
+    
+    try:
+        response = model.generate_content(
+            files_to_send + [EXTREME_PROMPT], 
+            generation_config={"response_mime_type": "application/json"}
+        )
+        data = json.loads(response.text)
+        if "visual_fields" not in data: data["visual_fields"] = []
+        if "checkbox_fields" not in data: data["checkbox_fields"] = []
+    except Exception as e:
+        print(f"AI/JSON Error: {e}")
+        return json.dumps({"visual_fields": [], "confirmation_message": "Error processing form logic."})
 
     # --- STEP 4: TYPESETTER ENGINE ---
     if doc_path:
@@ -1145,24 +612,13 @@ JSON OUTPUT:
                     draw.line([p2, p3], fill=(0, 0, 0), width=thickness)
 
             output_filename = f"filled_{int(time.time())}.jpg"
-            # Use slightly lower quality for faster processing (85 instead of 95)
-            img.save(os.path.join(UPLOAD_FOLDER, output_filename), quality=85, optimize=True)
+            img.save(os.path.join(UPLOAD_FOLDER, output_filename), quality=95)
             data["filled_image_url"] = f"/uploads/{output_filename}"
             
         except Exception as e:
             print(f"Render Error: {e}")
 
-    # Clean up uploaded files
-    for f in files_to_send:
-        try:
-            genai.delete_file(f.name)
-        except:
-            pass
-    
-    total_form_time = time.time() - form_start
-    print(f"✅ [FORM] Total form processing time: {total_form_time:.1f}s")
-    print(f"{'='*60}\n")
-    
+    for f in files_to_send: genai.delete_file(f.name)
     return json.dumps(data)
 @app.route('/uploads/<filename>')
 def uploaded_file(filename):
@@ -1192,11 +648,6 @@ def analyze_medicine():
             os.remove(filepath)
 @app.route('/analyze_vision', methods=['POST'])
 def analyze_vision():
-    request_start = time.time()
-    print(f"\n{'='*60}")
-    print(f"🖼️ [VISION] New vision analysis request")
-    print(f"{'='*60}")
-    
     lang = request.form.get('language', 'en')
     files = request.files.getlist('images') or ([request.files['image']] if 'image' in request.files else [])
     
@@ -1207,35 +658,7 @@ def analyze_vision():
 
     try:
         res_str = analyze_vision_with_gemini(paths, request.form.get('scan_type'), request.form.get('user_prompt'), 'en')
-        result = json.loads(res_str)
-        
-        total_time = time.time() - request_start
-        print(f"✅ [VISION] Request completed in {total_time:.1f}s")
-        print(f"{'='*60}\n")
-        
-        return jsonify(amazon_translate_dict(result, lang))
-    except ValueError as e:
-        error_msg = str(e)
-        print(f"❌ [VISION] Error: {error_msg}")
-        total_time = time.time() - request_start
-        print(f"❌ [VISION] Request failed after {total_time:.1f}s")
-        print(f"{'='*60}\n")
-        
-        if "safety" in error_msg.lower() or "blocked" in error_msg.lower():
-            return jsonify({
-                "error": "Content was blocked by safety filters",
-                "answer_to_user": "The image content triggered safety filters. Please try with a different image.",
-                "recommendation": "Use a different image or ensure the image is appropriate for medical analysis."
-            }), 200
-        
-        return jsonify({"error": error_msg}), 500
-    except Exception as e:
-        print(f"❌ [VISION] Error: {e}")
-        traceback.print_exc()
-        total_time = time.time() - request_start
-        print(f"❌ [VISION] Request failed after {total_time:.1f}s")
-        print(f"{'='*60}\n")
-        return jsonify({"error": str(e)}), 500
+        return jsonify(amazon_translate_dict(json.loads(res_str), lang))
     finally:
         for p in paths: 
             if os.path.exists(p): os.remove(p)            
@@ -1244,271 +667,35 @@ def analyze_audio_with_gemini(audio_path, user_prompt, language='en'):
     lang_map = {"en": "English", "hi": "Hindi", "kn": "Kannada"}
     target_lang = lang_map.get(language, "English")
 
-    audio_file = None
-    max_retries = 2  # Reduced retries but longer timeouts
-    retry_delay = 2
+    audio_file = genai.upload_file(path=audio_path)
+    while audio_file.state.name == "PROCESSING":
+        time.sleep(1)
+        audio_file = genai.get_file(audio_file.name)
+
+    model = genai.GenerativeModel(
+        model_name=MODEL_NAME,
+        system_instruction=SYSTEM_INSTRUCTION
+    )
     
-    print(f"🎵 [AUDIO] Starting analysis for {target_lang}...")
-    start_time = time.time()
+    prompt = f"""
+    Analyze this audio.
+    Context: {user_prompt}
+    Target Language: {target_lang}.
+    
+    CRITICAL INSTRUCTION: 
+    1. Output strictly plain text for explanations (NO markdown, NO quotes).
+    2. Translate all value strings to {target_lang}.
+    """
+
+    response = model.generate_content(
+        [audio_file, prompt],
+        generation_config={"response_mime_type": "application/json", "temperature": 0.2}
+    )
+
+    genai.delete_file(audio_file.name)
     
     try:
-        # Upload audio file with extended timeout
-        print(f"📤 [AUDIO] Uploading file: {audio_path}")
-        audio_file = genai.upload_file(path=audio_path)
-        upload_timeout = 60  # Extended to 60 seconds
-        upload_start = time.time()
-        
-        while audio_file.state.name == "PROCESSING":
-            elapsed = time.time() - upload_start
-            if elapsed > upload_timeout:
-                raise TimeoutError(f"Audio upload timeout after {elapsed:.1f}s")
-            if int(elapsed) % 5 == 0:  # Log every 5 seconds
-                print(f"⏳ [AUDIO] Upload in progress... {elapsed:.1f}s")
-            time.sleep(0.5)  # Check every 0.5s
-            audio_file = genai.get_file(audio_file.name)
-        
-        upload_elapsed = time.time() - upload_start
-        print(f"✅ [AUDIO] Upload complete in {upload_elapsed:.1f}s")
-
-        safety_config = {
-            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE # <--- CHANGED
-        }
-        
-        # Use Pro model for best accuracy - it's more reliable for medical analysis
-        print(f"🤖 [AUDIO] Using {MODEL_NAME} for accurate medical analysis...")
-        model = genai.GenerativeModel(
-            model_name=MODEL_NAME,  # Use pro for accuracy
-            system_instruction=SYSTEM_INSTRUCTION,
-            safety_settings=safety_config
-        )
-        
-        # Enhanced clinical prompt with strong medical context to avoid false safety triggers
-        prompt = f"""MEDICAL AUDIO ANALYSIS REQUEST - CLINICAL RESPIRATORY ASSESSMENT
-
-This is a legitimate medical audio recording for clinical respiratory condition analysis. 
-The audio contains breathing sounds, coughs, or respiratory patterns recorded for medical evaluation purposes.
-
-CLINICAL CONTEXT:
-- Patient symptoms/context: {user_prompt if user_prompt else 'General respiratory assessment'}
-- Recording purpose: Medical diagnosis and clinical evaluation
-- Content type: Respiratory sounds, breathing patterns, cough sounds
-- This is NOT harmful content - it is medical/clinical audio data
-
-ANALYSIS REQUIREMENTS:
-1. Listen to the audio and identify specific respiratory conditions (Croup, Asthma, Pneumonia, Bronchitis, URI, etc.)
-2. Describe the exact sounds heard: wheezing, stridor, crackles, dry/hacking cough, wet/productive cough, breathing patterns
-3. Provide accurate medical assessment with confidence scores
-4. Output language: {target_lang}
-
-Return structured JSON analysis with accurate medical findings. This is a legitimate medical analysis request."""
-
-        # Retry logic with model fallback if safety filters trigger
-        response = None
-        response_text = None
-        safety_blocked = False
-        models_to_try = [MODEL_NAME, "gemini-3-flash-preview"]  # Try pro first, then flash
-        current_model_idx = 0
-        
-        for attempt in range(max_retries * 2):  # Allow trying both models
-            try:
-                attempt_start = time.time()
-                current_model = models_to_try[current_model_idx] if current_model_idx < len(models_to_try) else MODEL_NAME
-                print(f"🔄 [AUDIO] Attempt {attempt + 1} - Using {current_model}...")
-                
-                # Create model if we switched
-                if current_model != model._model_name if hasattr(model, '_model_name') else MODEL_NAME:
-                    model = genai.GenerativeModel(
-                        model_name=current_model,
-                        system_instruction=SYSTEM_INSTRUCTION,
-                        safety_settings=safety_config
-                    )
-                
-                # Extended timeout: 180 seconds (3 minutes) per attempt
-                response = model.generate_content(
-                    [audio_file, prompt],
-                    generation_config={
-                        "response_mime_type": "application/json",
-                        "temperature": 0.2,
-                        "max_output_tokens": 600  # Reduced further for speed
-                    },
-                    safety_settings=safety_config,  # Pass safety settings in generate_content too
-                    request_options={"timeout": 180}  # 3 minutes per attempt
-                )
-                
-                attempt_elapsed = time.time() - attempt_start
-                print(f"✅ [AUDIO] Attempt {attempt + 1} completed in {attempt_elapsed:.1f}s")
-                
-                # Verify response is valid using safe extraction (handles safety filters)
-                try:
-                    response_text = safe_get_response_text(response)
-                    if response_text and response_text.strip():
-                        # Success - break out of retry loop
-                        safety_blocked = False
-                        break
-                    else:
-                        # Empty response - try next model
-                        if current_model_idx < len(models_to_try) - 1:
-                            current_model_idx += 1
-                            print(f"🔄 [AUDIO] Empty response, switching to {models_to_try[current_model_idx]}...")
-                            continue
-                        raise ValueError("Empty response from API")
-                except ValueError as ve:
-                    # Check if it's a safety filter error
-                    error_msg = str(ve).lower()
-                    if "safety" in error_msg or "blocked" in error_msg or "recitation" in error_msg:
-                        print(f"🚫 [AUDIO] Content blocked by safety filters on attempt {attempt + 1}")
-                        safety_blocked = True
-                        
-                        # Try to extract partial response even if blocked
-                        try:
-                            # Force extract any available text
-                            if hasattr(response, 'candidates') and response.candidates:
-                                candidate = response.candidates[0]
-                                if hasattr(candidate, 'content') and candidate.content:
-                                    if hasattr(candidate.content, 'parts'):
-                                        parts_text = []
-                                        for part in candidate.content.parts:
-                                            if hasattr(part, 'text') and part.text:
-                                                parts_text.append(part.text)
-                                        if parts_text:
-                                            response_text = ''.join(parts_text)
-                                            print(f"✅ [AUDIO] Extracted partial response despite safety filter ({len(response_text)} chars)")
-                                            safety_blocked = False
-                                            break
-                        except:
-                            pass
-                        
-                        # Try next model if available
-                        if current_model_idx < len(models_to_try) - 1:
-                            current_model_idx += 1
-                            print(f"🔄 [AUDIO] Switching to {models_to_try[current_model_idx]} as fallback...")
-                            continue  # Retry with different model
-                        else:
-                            # All models blocked - will return default after loop
-                            break
-                    else:
-                        raise
-                
-            except ValueError as ve:
-                # Handle ValueError separately (safety filters)
-                error_str = str(ve).lower()
-                if "safety" in error_str or "blocked" in error_str or "recitation" in error_str:
-                    print(f"🚫 [AUDIO] Safety filter ValueError on attempt {attempt + 1}")
-                    safety_blocked = True
-                    # Try next model if available
-                    if current_model_idx < len(models_to_try) - 1:
-                        current_model_idx += 1
-                        print(f"🔄 [AUDIO] Switching to {models_to_try[current_model_idx]}...")
-                        continue
-                    else:
-                        break  # Exit loop to return default
-                else:
-                    raise  # Re-raise other ValueErrors
-                
-            except Exception as e:
-                error_str = str(e).lower()
-                attempt_elapsed = time.time() - attempt_start
-                
-                # Check if it's a safety filter error
-                if "safety" in error_str or "blocked" in error_str or "recitation" in error_str or "finish_reason" in error_str:
-                    print(f"🚫 [AUDIO] Safety filter triggered on attempt {attempt + 1}")
-                    safety_blocked = True
-                    # Try next model if available
-                    if current_model_idx < len(models_to_try) - 1:
-                        current_model_idx += 1
-                        print(f"🔄 [AUDIO] Switching to {models_to_try[current_model_idx]}...")
-                        continue
-                    else:
-                        break  # Exit loop to return default
-                
-                # Check if it's a timeout/deadline error
-                if "deadline" in error_str or "timeout" in error_str or "504" in error_str:
-                    print(f"⏱️ [AUDIO] Timeout on attempt {attempt + 1} after {attempt_elapsed:.1f}s")
-                    if attempt < max_retries - 1:
-                        wait_time = retry_delay * (2 ** attempt)  # Exponential backoff
-                        print(f"⏳ [AUDIO] Waiting {wait_time}s before retry...")
-                        time.sleep(wait_time)
-                        continue
-                    else:
-                        # Last attempt failed
-                        total_elapsed = time.time() - start_time
-                        raise TimeoutError(f"Audio analysis timed out after {max_retries} attempts ({total_elapsed:.1f}s total)")
-                else:
-                    # Non-timeout error - log and re-raise
-                    print(f"❌ [AUDIO] Error on attempt {attempt + 1}: {str(e)}")
-                    raise
-        
-        # Check if we have a valid response (safe_get_response_text now returns default JSON if blocked)
-        if not response_text:
-            print(f"⚠️ [AUDIO] No response text available. This should not happen as safe_get_response_text returns default.")
-            # This should rarely happen, but handle it
-            if audio_file:
-                try:
-                    genai.delete_file(audio_file.name)
-                except:
-                    pass
-            default_response = {
-                "valid_audio": True,
-                "universal_match": {"disease_name": "Respiratory Assessment", "similarity_score": 0},
-                "severity": "Unknown",
-                "infection_type": "Under Analysis",
-                "simple_explanation": "Audio analysis completed. Please consult with a healthcare provider for detailed assessment.",
-                "audio_characteristics": "Respiratory audio patterns detected.",
-                "recommendation": "Please consult a healthcare provider for comprehensive respiratory evaluation."
-            }
-            return json.dumps(default_response)
-        
-        # Verify we have a valid response and response text
-        if not response or not response_text:
-            raise ValueError("No valid response received from API")
-        
-        print(f"📝 [AUDIO] Raw response length: {len(response_text)} chars")
-        
-        total_elapsed = time.time() - start_time
-        print(f"✅ [AUDIO] Analysis complete in {total_elapsed:.1f}s total")
-        
-        # Clean up uploaded file
-        if audio_file:
-            try:
-                genai.delete_file(audio_file.name)
-                print(f"🗑️ [AUDIO] Cleaned up uploaded file")
-            except:
-                pass  # Ignore cleanup errors
-        
-        # Process response with robust JSON parsing
-        print(f"📊 [AUDIO] Processing response...")
-        
-        # Try to parse JSON - response_text should always be a string (JSON)
-        data = None
-        try:
-            # If response_text is already a dict, use it directly
-            if isinstance(response_text, dict):
-                data = response_text
-            else:
-                # Parse JSON string
-                data = json.loads(response_text)
-        except json.JSONDecodeError as e:
-            print(f"⚠️ [AUDIO] JSON parse error, attempting to clean: {e}")
-            data = clean_json_response(response_text)
-            
-            if data is None:
-                # Last attempt: try to extract just the JSON part
-                print(f"⚠️ [AUDIO] Cleaning failed, attempting manual extraction...")
-                # Try to find and extract JSON object
-                json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
-                if json_match:
-                    try:
-                        data = json.loads(json_match.group(0))
-                    except:
-                        pass
-                
-                if data is None:
-                    raise ValueError(f"Could not parse JSON from response. Error: {e}")
-        
-        print(f"✅ [AUDIO] JSON parsed successfully")
+        data = json.loads(response.text)
         
         # FIX: Handle case where Gemini returns a list instead of a dict
         if isinstance(data, list):
@@ -1557,79 +744,15 @@ Return structured JSON analysis with accurate medical findings. This is a legiti
         
         return json.dumps(formatted_output)
 
-    except ValueError as e:
-        # Handle safety filter and other value errors
-        error_msg = str(e).lower()
-        total_elapsed = time.time() - start_time if 'start_time' in locals() else 0
-        
-        if "safety" in error_msg or "blocked" in error_msg or "recitation" in error_msg:
-            print(f"🚫 [AUDIO] Safety filter triggered after {total_elapsed:.1f}s")
-        else:
-            print(f"❌ [AUDIO] ValueError after {total_elapsed:.1f}s: {e}")
-        
-        # Clean up on error
-        if audio_file:
-            try:
-                genai.delete_file(audio_file.name)
-            except:
-                pass
-        
-        if "safety" in error_msg or "blocked" in error_msg:
-            return json.dumps({
-                "valid_audio": True,
-                "condition": "Content Filtered",
-                "disease_type": "Safety Filter",
-                "simple_explanation": "The audio content was blocked by safety filters. This may happen if the recording contains background noise, unclear speech, or other content that triggered filters.",
-                "recommendation": "Please try recording again with clearer speech in a quiet environment. Ensure the recording contains only the respiratory sounds you want analyzed.",
-                "acoustic_analysis": "N/A",
-                "severity": "Unknown"
-            })
-        else:
-            return json.dumps({
-                "valid_audio": True,
-                "condition": "Analysis Error",
-                "disease_type": "System Error",
-                "simple_explanation": f"Could not process audio data. {str(e)[:150]}",
-                "recommendation": "Please try again with a shorter audio clip or check your connection.",
-                "acoustic_analysis": "N/A",
-                "severity": "Unknown"
-            })
-    except TimeoutError as e:
-        total_elapsed = time.time() - start_time if 'start_time' in locals() else 0
-        print(f"⏱️ [AUDIO] Timeout Error after {total_elapsed:.1f}s: {e}")
-        # Clean up on timeout
-        if audio_file:
-            try:
-                genai.delete_file(audio_file.name)
-            except:
-                pass
-        return json.dumps({
-            "valid_audio": True,
-            "condition": "Processing Timeout",
-            "disease_type": "System Timeout",
-            "simple_explanation": f"The analysis timed out after {total_elapsed:.0f} seconds. The audio file may be too long or the connection is slow.",
-            "recommendation": "Try recording a shorter audio sample (under 30 seconds) or check your internet connection.",
-            "acoustic_analysis": "N/A",
-            "severity": "Unknown"
-        })
     except Exception as e:
-        total_elapsed = time.time() - start_time if 'start_time' in locals() else 0
-        print(f"❌ [AUDIO] Error after {total_elapsed:.1f}s: {e}")
-        traceback.print_exc()  # Full stack trace for debugging
-        # Clean up on any error
-        if audio_file:
-            try:
-                genai.delete_file(audio_file.name)
-            except:
-                pass
+        print(f"Logic Error: {e}")
         return json.dumps({
             "valid_audio": True,
             "condition": "Analysis Error",
             "disease_type": "System Error",
-            "simple_explanation": f"Could not process audio data. Error: {str(e)[:100]}",
-            "recommendation": "Please try again with a shorter audio clip or check your connection.",
-            "acoustic_analysis": "N/A",
-            "severity": "Unknown"
+            "simple_explanation": "Could not process audio data safely. Please try again.",
+            "recommendation": "Check internet connection.",
+            "acoustic_analysis": "N/A"
         })    
 @app.route('/')
 
@@ -1694,104 +817,21 @@ def amazon_translate_dict(data, target_lang):
 
 @app.route('/analyze', methods=['POST'])
 def analyze():
-    request_start = time.time()
-    print(f"\n{'='*60}")
-    print(f"🎤 [REQUEST] New audio analysis request received")
-    print(f"{'='*60}")
-    
     if 'audio' not in request.files:
         return jsonify({"error": "No audio file"}), 400
     
     lang = request.form.get('language', 'en')
     file = request.files['audio']
-    
-    # Get file size for logging
-    file.seek(0, 2)  # Seek to end
-    file_size = file.tell()
-    file.seek(0)  # Reset
-    
-    print(f"📁 [REQUEST] File size: {file_size / 1024:.1f} KB")
-    print(f"🌐 [REQUEST] Language: {lang}")
-    
-    # Support both webm and wav
-    ext = 'webm' if file.filename and 'webm' in file.filename.lower() else 'wav'
-    filepath = os.path.join(UPLOAD_FOLDER, secure_filename(f"t_{int(time.time())}.{ext}"))
+    filepath = os.path.join(UPLOAD_FOLDER, secure_filename(f"t_{int(time.time())}.wav"))
     file.save(filepath)
 
     try:
         # 1. Analyze in English (highest accuracy)
         res_str = analyze_audio_with_gemini(filepath, request.form.get('user_prompt', ''), 'en')
         # 2. Translate everything via Amazon
-        result = json.loads(res_str)
-        
-        total_time = time.time() - request_start
-        print(f"✅ [REQUEST] Request completed in {total_time:.1f}s")
-        print(f"{'='*60}\n")
-        
-        return jsonify(amazon_translate_dict(result, lang))
-    except ValueError as e:
-        error_msg = str(e)
-        print(f"❌ [REQUEST] Value Error: {error_msg}")
-        total_time = time.time() - request_start
-        print(f"❌ [REQUEST] Request failed after {total_time:.1f}s")
-        print(f"{'='*60}\n")
-        
-        # Handle safety filter errors
-        if "safety" in error_msg.lower() or "blocked" in error_msg.lower():
-            return jsonify({
-                "valid_audio": True,
-                "condition": "Content Filtered",
-                "disease_type": "Safety Filter",
-                "simple_explanation": "The audio content triggered safety filters. Please try with a different recording.",
-                "recommendation": "Record a new audio sample with clearer speech.",
-                "acoustic_analysis": "N/A",
-                "severity": "Unknown"
-            }), 200  # Return 200 so frontend can display the message
-        
-        return jsonify({
-            "valid_audio": True,
-            "condition": "Processing Error",
-            "disease_type": "System Error",
-            "simple_explanation": f"Analysis failed: {error_msg[:100]}",
-            "recommendation": "Please try again with a shorter audio clip.",
-            "acoustic_analysis": "N/A",
-            "severity": "Unknown"
-        }), 500
-    except json.JSONDecodeError as e:
-        print(f"❌ [REQUEST] JSON Decode Error: {e}")
-        total_time = time.time() - request_start
-        print(f"❌ [REQUEST] Request failed after {total_time:.1f}s")
-        print(f"{'='*60}\n")
-        return jsonify({
-            "valid_audio": True,
-            "condition": "Processing Error",
-            "disease_type": "Format Error",
-            "simple_explanation": "Could not parse the analysis result. The response format was invalid.",
-            "recommendation": "Retry with a shorter audio clip or try again.",
-            "acoustic_analysis": "N/A",
-            "severity": "Unknown"
-        }), 500
-    except Exception as e:
-        print(f"❌ [REQUEST] Analyze Route Error: {e}")
-        traceback.print_exc()
-        total_time = time.time() - request_start
-        print(f"❌ [REQUEST] Request failed after {total_time:.1f}s")
-        print(f"{'='*60}\n")
-        return jsonify({
-            "valid_audio": True,
-            "condition": "System Error",
-            "disease_type": "Error",
-            "simple_explanation": f"An error occurred during analysis: {str(e)[:100]}",
-            "recommendation": "Check your connection and retry.",
-            "acoustic_analysis": "N/A",
-            "severity": "Unknown"
-        }), 500
+        return jsonify(amazon_translate_dict(json.loads(res_str), lang))
     finally:
-        if os.path.exists(filepath): 
-            try:
-                os.remove(filepath)
-            except:
-                pass        
+        if os.path.exists(filepath): os.remove(filepath)        
 @app.route('/process_form_voice', methods=['POST'])
 def process_form_voice():
     lang = request.form.get('language', 'en')
