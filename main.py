@@ -197,7 +197,8 @@ def safe_get_response_text(response):
         
         candidate = response.candidates[0]
         
-        # Check finish reason (2 = SAFETY, 3 = RECITATION, etc.)
+        # Check finish reason FIRST before trying to access text
+        # This prevents the ValueError from accessing response.text when finish_reason is 2
         if hasattr(candidate, 'finish_reason'):
             finish_reason = candidate.finish_reason
             if finish_reason == 2:  # SAFETY
@@ -207,17 +208,34 @@ def safe_get_response_text(response):
             elif finish_reason != 1:  # 1 = STOP (normal)
                 raise ValueError(f"Response finished with reason: {finish_reason}")
         
-        # Try to get text
-        if hasattr(response, 'text'):
-            return response.text
-        elif hasattr(candidate, 'content') and candidate.content:
+        # Now safely try to get text (finish_reason check passed)
+        # Try direct text access first (fastest)
+        try:
+            if hasattr(response, 'text'):
+                text = response.text
+                if text:
+                    return text
+        except ValueError:
+            # If direct access fails (e.g., finish_reason 2), try alternative methods
+            pass
+        
+        # Alternative: try to get from candidate content
+        if hasattr(candidate, 'content') and candidate.content:
             if hasattr(candidate.content, 'parts'):
-                text_parts = [part.text for part in candidate.content.parts if hasattr(part, 'text')]
-                return ''.join(text_parts)
+                text_parts = []
+                for part in candidate.content.parts:
+                    if hasattr(part, 'text') and part.text:
+                        text_parts.append(part.text)
+                if text_parts:
+                    return ''.join(text_parts)
         
-        raise ValueError("Could not extract text from response")
+        raise ValueError("Could not extract text from response - no valid parts found")
         
+    except ValueError:
+        # Re-raise ValueError as-is (these are our custom errors)
+        raise
     except Exception as e:
+        # Wrap other exceptions
         raise ValueError(f"Error extracting response text: {str(e)}") 
 import urllib.request
 app = Flask(__name__)
@@ -984,6 +1002,7 @@ def analyze_audio_with_gemini(audio_path, user_prompt, language='en'):
 
         # Retry logic with longer timeouts
         response = None
+        response_text = None
         for attempt in range(max_retries):
             try:
                 attempt_start = time.time()
@@ -1004,16 +1023,33 @@ def analyze_audio_with_gemini(audio_path, user_prompt, language='en'):
                 attempt_elapsed = time.time() - attempt_start
                 print(f"✅ [AUDIO] Attempt {attempt + 1} completed in {attempt_elapsed:.1f}s")
                 
-                # Verify response is valid
-                if response and hasattr(response, 'text') and response.text:
-                    # Success - break out of retry loop
-                    break
-                else:
-                    raise ValueError("Invalid response from API")
+                # Verify response is valid using safe extraction (handles safety filters)
+                try:
+                    response_text = safe_get_response_text(response)
+                    if response_text:
+                        # Success - break out of retry loop
+                        break
+                    else:
+                        raise ValueError("Empty response from API")
+                except ValueError as ve:
+                    # Check if it's a safety filter error - don't retry these
+                    error_msg = str(ve).lower()
+                    if "safety" in error_msg or "blocked" in error_msg or "recitation" in error_msg:
+                        print(f"🚫 [AUDIO] Content blocked by safety filters on attempt {attempt + 1}")
+                        # Don't retry safety filter errors - return immediately
+                        raise ValueError("Response was blocked by safety filters. The audio content may have triggered content filters. Please try with a different recording.")
+                    else:
+                        raise
                 
             except Exception as e:
                 error_str = str(e).lower()
                 attempt_elapsed = time.time() - attempt_start
+                
+                # Check if it's a safety filter error - don't retry
+                if "safety" in error_str or "blocked" in error_str or "recitation" in error_str or "finish_reason" in error_str:
+                    print(f"🚫 [AUDIO] Safety filter triggered on attempt {attempt + 1}")
+                    # Re-raise immediately - don't retry safety filters
+                    raise ValueError("Response was blocked by safety filters. Please try with a different audio recording.")
                 
                 # Check if it's a timeout/deadline error
                 if "deadline" in error_str or "timeout" in error_str or "504" in error_str:
@@ -1032,9 +1068,11 @@ def analyze_audio_with_gemini(audio_path, user_prompt, language='en'):
                     print(f"❌ [AUDIO] Error on attempt {attempt + 1}: {str(e)}")
                     raise
         
-        # Verify we have a valid response
-        if not response or not hasattr(response, 'text'):
+        # Verify we have a valid response and response text
+        if not response or not response_text:
             raise ValueError("No valid response received from API")
+        
+        print(f"📝 [AUDIO] Raw response length: {len(response_text)} chars")
         
         total_elapsed = time.time() - start_time
         print(f"✅ [AUDIO] Analysis complete in {total_elapsed:.1f}s total")
@@ -1049,12 +1087,6 @@ def analyze_audio_with_gemini(audio_path, user_prompt, language='en'):
         
         # Process response with robust JSON parsing
         print(f"📊 [AUDIO] Processing response...")
-        try:
-            response_text = safe_get_response_text(response)
-            print(f"📝 [AUDIO] Raw response length: {len(response_text)} chars")
-        except ValueError as e:
-            print(f"❌ [AUDIO] Response extraction error: {e}")
-            raise
         
         # Try to parse JSON with cleaning
         data = None
@@ -1127,6 +1159,43 @@ def analyze_audio_with_gemini(audio_path, user_prompt, language='en'):
         
         return json.dumps(formatted_output)
 
+    except ValueError as e:
+        # Handle safety filter and other value errors
+        error_msg = str(e).lower()
+        total_elapsed = time.time() - start_time if 'start_time' in locals() else 0
+        
+        if "safety" in error_msg or "blocked" in error_msg or "recitation" in error_msg:
+            print(f"🚫 [AUDIO] Safety filter triggered after {total_elapsed:.1f}s")
+        else:
+            print(f"❌ [AUDIO] ValueError after {total_elapsed:.1f}s: {e}")
+        
+        # Clean up on error
+        if audio_file:
+            try:
+                genai.delete_file(audio_file.name)
+            except:
+                pass
+        
+        if "safety" in error_msg or "blocked" in error_msg:
+            return json.dumps({
+                "valid_audio": True,
+                "condition": "Content Filtered",
+                "disease_type": "Safety Filter",
+                "simple_explanation": "The audio content was blocked by safety filters. This may happen if the recording contains background noise, unclear speech, or other content that triggered filters.",
+                "recommendation": "Please try recording again with clearer speech in a quiet environment. Ensure the recording contains only the respiratory sounds you want analyzed.",
+                "acoustic_analysis": "N/A",
+                "severity": "Unknown"
+            })
+        else:
+            return json.dumps({
+                "valid_audio": True,
+                "condition": "Analysis Error",
+                "disease_type": "System Error",
+                "simple_explanation": f"Could not process audio data. {str(e)[:150]}",
+                "recommendation": "Please try again with a shorter audio clip or check your connection.",
+                "acoustic_analysis": "N/A",
+                "severity": "Unknown"
+            })
     except TimeoutError as e:
         total_elapsed = time.time() - start_time if 'start_time' in locals() else 0
         print(f"⏱️ [AUDIO] Timeout Error after {total_elapsed:.1f}s: {e}")
