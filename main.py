@@ -429,7 +429,8 @@ def analyze_form_voice(audio_path, text_input, mode, doc_path=None, language='en
     target_lang = lang_map.get(language, "English")
 
     # --- STEP 1: TRANSCRIBE AUDIO ---
-    final_text_input = text_input or ""
+    # Use text_input if provided, otherwise start empty
+    final_text_input = (text_input or "").strip()
     print(f"Initial text input: '{final_text_input}'")
     
     if audio_path:
@@ -447,8 +448,8 @@ def analyze_form_voice(audio_path, text_input, mode, doc_path=None, language='en
                 print(f"Audio upload failed or timed out: {audio_file.state.name}")
                 raise Exception("Audio upload failed")
             
-            # Use a more reliable model for transcription
-            transcribe_model = genai.GenerativeModel("gemini-1.5-flash")  # More reliable for transcription
+            # Use Gemini 3 for transcription (best model)
+            transcribe_model = genai.GenerativeModel("gemini-3-flash-preview")  # Best model for transcription
             
             # Improved transcription prompt - more direct
             transcribe_prompt = f"""You are a speech-to-text transcription system. Listen to this audio and write down EXACTLY what the person says.
@@ -485,18 +486,26 @@ Output ONLY the transcribed text in {target_lang}. No explanations, no quotes, j
                     
                     # Validate transcription - reject if it's just punctuation or too short
                     if transcribed_text and len(transcribed_text) > 1 and transcribed_text not in [".", ",", "!", "?", "...", "no speech detected", "No speech detected", "No speech", "no speech"]:
-                        final_text_input += f" {transcribed_text}"
+                        # Combine text_input and transcription
+                        if final_text_input:
+                            final_text_input = f"{final_text_input} {transcribed_text}".strip()
+                        else:
+                            final_text_input = transcribed_text
                         print(f"✓ Transcribed text: '{transcribed_text}'")
                     else:
                         print(f"✗ Transcription appears invalid or empty: '{transcribed_text}'")
-                        if not final_text_input.strip():
+                        # If we have text_input, use it even if transcription failed
+                        if not final_text_input.strip() and text_input:
+                            final_text_input = text_input.strip()
+                            print(f"Using provided text_input instead: '{final_text_input}'")
+                        elif not final_text_input.strip():
                             print("WARNING: No valid transcription and no text input provided!")
                             # Try alternative transcription method
                             try:
                                 print("Attempting alternative transcription...")
                                 alt_transcribe = transcribe_model.generate_content(
                                     [audio_file, "What did the person say in this audio? Transcribe every word exactly."],
-                                    generation_config={"temperature": 0.3, "max_output_tokens": 1000}
+                                    generation_config={"temperature": 0.3, "max_output_tokens": 2000}
                                 )
                                 if alt_transcribe.candidates and len(alt_transcribe.candidates) > 0:
                                     alt_candidate = alt_transcribe.candidates[0]
@@ -516,8 +525,16 @@ Output ONLY the transcribed text in {target_lang}. No explanations, no quotes, j
             
         except Exception as e:
             print(f"Transcription Error: {e}")
+            # If transcription fails but we have text_input, use it
+            if not final_text_input.strip() and text_input:
+                final_text_input = text_input.strip()
+                print(f"Using text_input after transcription error: '{final_text_input}'")
 
     # --- STEP 2: PREPARE IMAGE ---
+    # Ensure we still have text_input even if no audio was provided
+    if not final_text_input.strip() and text_input:
+        final_text_input = text_input.strip()
+        print(f"Using text_input (no audio provided): '{final_text_input}'")
     if doc_path:
         print(f"Preparing document: {doc_path}")
         doc_file = genai.upload_file(path=doc_path)
@@ -586,8 +603,8 @@ OUTPUT JSON:
 
 IMPORTANT: Extract as much as possible from "{final_text_input}". Even single words or numbers should be matched to appropriate form fields."""
 
-    # Use faster model for document analysis
-    model = genai.GenerativeModel(model_name="gemini-2.0-flash-exp")  # Faster than pro
+    # Use Gemini 3 for document analysis (best model)
+    model = genai.GenerativeModel(model_name="gemini-3-pro-preview")  # Best model for document analysis
     
     try:
         response = model.generate_content(
