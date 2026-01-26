@@ -199,9 +199,17 @@ def analyze_vision_with_gemini(image_paths, scan_type, user_prompt="", language=
     if image_paths:
         for index, path in enumerate(image_paths): # Changed to use enumerate
             img_file = genai.upload_file(path=path)
-            while img_file.state.name == "PROCESSING":
-                time.sleep(1)
+            # Optimized: Check file state with timeout and refresh
+            max_wait = 60
+            wait_time = 0
+            while img_file.state.name == "PROCESSING" and wait_time < max_wait:
+                time.sleep(0.5)  # Reduced from 1 second
                 img_file = genai.get_file(img_file.name)
+                wait_time += 0.5
+            
+            if img_file.state.name != "ACTIVE":
+                print(f"Image upload failed or timed out: {img_file.state.name}")
+                continue  # Skip this image
             
             # Add context for wound timeline
             if scan_type == "wound" and len(image_paths) > 1:
@@ -422,16 +430,28 @@ def analyze_form_voice(audio_path, text_input, mode, doc_path=None, language='en
 
     # --- STEP 1: TRANSCRIBE AUDIO ---
     final_text_input = text_input or ""
+    print(f"Initial text input: '{final_text_input}'")
     
     if audio_path:
         try:
             audio_file = genai.upload_file(path=audio_path)
-            while audio_file.state.name == "PROCESSING": time.sleep(1)
+            # Optimized: Check file state with timeout and refresh
+            max_wait = 30  # 30 second timeout
+            wait_time = 0
+            while audio_file.state.name == "PROCESSING" and wait_time < max_wait:
+                time.sleep(0.5)  # Reduced from 1 second
+                audio_file = genai.get_file(audio_file.name)
+                wait_time += 0.5
             
-            transcribe_model = genai.GenerativeModel("gemini-3-flash-preview")
+            if audio_file.state.name != "ACTIVE":
+                print(f"Audio upload failed or timed out: {audio_file.state.name}")
+                raise Exception("Audio upload failed")
+            
+            transcribe_model = genai.GenerativeModel("gemini-2.0-flash-exp")  # Faster model
             
             transcribe_res = transcribe_model.generate_content(
                 [audio_file, f"Transcribe this audio exactly into {target_lang}. Return ONLY the text."],
+                generation_config={"temperature": 0.1, "max_output_tokens": 500}  # Faster, shorter response
             )
             
             # Fix: Check if response has valid parts before accessing .text
@@ -440,6 +460,7 @@ def analyze_form_voice(audio_path, text_input, mode, doc_path=None, language='en
                 if candidate.content and candidate.content.parts:
                     transcribed_text = candidate.content.parts[0].text.strip()
                     final_text_input += f" {transcribed_text}"
+                    print(f"Transcribed text: '{transcribed_text}'")
                 else:
                     print("Transcription Error: Response has no valid parts")
             else:
@@ -452,63 +473,57 @@ def analyze_form_voice(audio_path, text_input, mode, doc_path=None, language='en
 
     # --- STEP 2: PREPARE IMAGE ---
     if doc_path:
+        print(f"Preparing document: {doc_path}")
         doc_file = genai.upload_file(path=doc_path)
-        while doc_file.state.name == "PROCESSING": time.sleep(1)
+        # Optimized: Check file state with timeout and refresh
+        max_wait = 60  # 60 second timeout for larger files
+        wait_time = 0
+        while doc_file.state.name == "PROCESSING" and wait_time < max_wait:
+            time.sleep(0.5)  # Reduced from 1 second
+            doc_file = genai.get_file(doc_file.name)
+            wait_time += 0.5
+        
+        if doc_file.state.name != "ACTIVE":
+            print(f"Document upload failed or timed out: {doc_file.state.name}")
+            raise Exception("Document upload failed")
+        
         files_to_send.append(doc_file)
+        print(f"Document uploaded successfully")
+    
+    print(f"Final text input for AI: '{final_text_input}'")
 
     # --- STEP 3: LOGIC & ALIGNMENT ---
-    EXTREME_PROMPT = f"""
-    You are an expert Document Typesetter.
-    
-    ### INPUT:
-    User Instructions: "{final_text_input}"
-    Target Language: {target_lang}
-    
-    ### CRITICAL RULES:
-    1. **ONLY FILL FIELDS EXPLICITLY MENTIONED:** 
-       - Extract field names and values ONLY from the user's instructions: "{final_text_input}"
-       - DO NOT fill fields that are NOT mentioned in the user instructions
-       - DO NOT use placeholder values like "none", "None", "N/A", or empty strings
-       - If a field is not mentioned, DO NOT include it in the output
-    
-    2. **Text Fields:** Map ONLY spoken values to form fields.
-       - **LANGUAGE RULE:** The "value" field MUST be in **{target_lang}**. If the user speaks Kannada, the form fill text MUST be in Kannada script. Do NOT translate to English.
-       - **CRITICAL:** Start the bounding box (`xmin`) **AFTER** the label text ends. 
-       - Leave a **gap** equivalent to 4 letter spaces between the label and the start of your box.
-       - **VALUE REQUIREMENT:** The "value" must be actual data from user instructions, NEVER "none" or empty
-       
-    3. **Checkboxes:** Identify checkboxes to TICK (only if explicitly requested in user instructions).
-       - Return the EXACT INNER BOUNDARY of the box.
-       - DO NOT check boxes that are not mentioned
-    
-    ### BOUNDING BOX RULES (`value_rect`):
-    - [ymin, xmin, ymax, xmax] must cover the **Blank Writing Space** only.
-    - `ymin` = Top of the handwriting line.
-    - `ymax` = The visible underline itself (baseline).
-    - `xmin` = The start of the empty space (NOT the start of the line).
-    
-    ### JSON OUTPUT FORMAT:
-    {{
-      "visual_fields": [
-        {{ "key": "Field Name", "value": "Actual Value from User Instructions", "value_rect": [ymin, xmin, ymax, xmax] }}
-      ],
-      "checkbox_fields": [
-        {{ "key": "Checkbox Label", "value_rect": [ymin, xmin, ymax, xmax] }}
-      ]
-    }}
-    
-    ### REMINDER:
-    - Only include fields that are EXPLICITLY mentioned in: "{final_text_input}"
-    - Never use "none", "None", "N/A", or empty values
-    - If no fields are mentioned, return empty arrays: {{"visual_fields": [], "checkbox_fields": []}}
-    """
+    # Optimized shorter prompt for faster processing
+    EXTREME_PROMPT = f"""Analyze the document image and extract form fields from user instructions: "{final_text_input}"
 
-    model = genai.GenerativeModel(model_name="gemini-3-pro-preview")
+TASK: Match user data to form fields. Extract field names and values from: "{final_text_input}"
+
+RULES:
+- Only fill fields mentioned in user instructions
+- Value must be in {target_lang} language
+- Start bounding box (xmin) AFTER label text ends, leave 4 letter spaces gap
+- value_rect format: [ymin, xmin, ymax, xmax] covering blank writing space only
+- Never use "none", "None", "N/A", or empty values
+
+OUTPUT JSON:
+{{
+  "visual_fields": [{{"key": "Field Name", "value": "Value from Instructions", "value_rect": [ymin, xmin, ymax, xmax]}}],
+  "checkbox_fields": [{{"key": "Checkbox Label", "value_rect": [ymin, xmin, ymax, xmax]}}]
+}}
+
+Extract ALL mentioned fields. Return empty arrays if none mentioned."""
+
+    # Use faster model for document analysis
+    model = genai.GenerativeModel(model_name="gemini-2.0-flash-exp")  # Faster than pro
     
     try:
         response = model.generate_content(
             files_to_send + [EXTREME_PROMPT], 
-            generation_config={"response_mime_type": "application/json"}
+            generation_config={
+                "response_mime_type": "application/json",
+                "temperature": 0.2,  # Lower temperature for faster, more deterministic responses
+                "max_output_tokens": 4000  # Limit output size for faster processing
+            }
         )
         
         # Fix: Check if response has valid parts before accessing .text
@@ -527,25 +542,40 @@ def analyze_form_voice(audio_path, text_input, mode, doc_path=None, language='en
         if "visual_fields" not in data: data["visual_fields"] = []
         if "checkbox_fields" not in data: data["checkbox_fields"] = []
         
+        print(f"AI returned {len(data['visual_fields'])} visual_fields and {len(data['checkbox_fields'])} checkbox_fields")
+        
         # Fix: Filter out invalid fields (none, None, empty, etc.)
         invalid_values = ["none", "None", "N/A", "n/a", "null", "Null", ""]
+        original_count = len(data["visual_fields"])
         data["visual_fields"] = [
             field for field in data["visual_fields"] 
             if field.get("value") and str(field.get("value")).strip() not in invalid_values
         ]
+        filtered_count = len(data["visual_fields"])
+        if original_count != filtered_count:
+            print(f"Filtered out {original_count - filtered_count} invalid fields. Remaining: {filtered_count}")
         
     except Exception as e:
         print(f"AI/JSON Error: {e}")
         return json.dumps({"visual_fields": [], "confirmation_message": "Error processing form logic."})
 
     # --- STEP 4: TYPESETTER ENGINE ---
-    if doc_path:
+    # Only fill document if we have valid fields to fill
+    if doc_path and (len(data.get("visual_fields", [])) > 0 or len(data.get("checkbox_fields", [])) > 0):
         try:
+            print(f"Filling document with {len(data.get('visual_fields', []))} text fields and {len(data.get('checkbox_fields', []))} checkboxes")
             img = Image.open(doc_path).convert("RGB")
             draw = ImageDraw.Draw(img)
             w, h = img.size
             
+            # Cache fonts to avoid reloading
+            _font_cache = {}
+            
             def load_font(size):
+                cache_key = f"{language}_{int(size)}"
+                if cache_key in _font_cache:
+                    return _font_cache[cache_key]
+                
                 # Define font paths
                 kannada_font = os.path.join(BASE_DIR, "NotoSansKannada-Regular.ttf")
                 roboto_font = os.path.join(BASE_DIR, "Roboto-Regular.ttf")
@@ -563,14 +593,16 @@ def analyze_form_voice(audio_path, text_input, mode, doc_path=None, language='en
                     selected_font_path = os.path.join(BASE_DIR, "arial.ttf")
 
                 # 2. Load the selected font
+                font_obj = ImageFont.load_default()  # Default fallback
                 if os.path.exists(selected_font_path):
                     try: 
-                        return ImageFont.truetype(selected_font_path, int(size))
+                        font_obj = ImageFont.truetype(selected_font_path, int(size))
                     except Exception: 
                         pass
                 
-                # 3. Ultimate Fallback
-                return ImageFont.load_default()
+                # Cache the font
+                _font_cache[cache_key] = font_obj
+                return font_obj
 
 
             # A. DRAW TEXT FIELDS
@@ -606,16 +638,22 @@ def analyze_form_voice(audio_path, text_input, mode, doc_path=None, language='en
                 
                 text_val = str(field["value"])
                 
-                # SHRINK LOOP: If text is wider than the line, reduce font size
+                # SHRINK LOOP: If text is wider than the line, reduce font size (optimized)
                 while target_size > 8:
-                    # Measure text width with current font
-                    text_len = current_font.getlength(text_val) if hasattr(current_font, 'getlength') else current_font.getsize(text_val)[0]
+                    # Measure text width with current font (use faster method)
+                    try:
+                        text_len = current_font.getlength(text_val)
+                    except:
+                        try:
+                            text_len = current_font.getsize(text_val)[0]
+                        except:
+                            text_len = len(text_val) * (target_size * 0.6)  # Rough estimate
                     
                     if text_len <= max_text_width:
                         break # It fits! Stop shrinking.
                     
-                    # Too wide? Shrink and re-measure
-                    target_size -= 2
+                    # Too wide? Shrink and re-measure (larger steps for speed)
+                    target_size -= 3  # Increased from 2 to 3 for faster processing
                     current_font = load_font(target_size)
 
                 # 4. Draw (Baseline Aligned)
@@ -662,11 +700,23 @@ def analyze_form_voice(audio_path, text_input, mode, doc_path=None, language='en
                     draw.line([p2, p3], fill=(0, 0, 0), width=thickness)
 
             output_filename = f"filled_{int(time.time())}.jpg"
-            img.save(os.path.join(UPLOAD_FOLDER, output_filename), quality=95)
+            output_path = os.path.join(UPLOAD_FOLDER, output_filename)
+            # Optimized: Use quality 85 instead of 95 for faster saving (minimal quality difference)
+            img.save(output_path, quality=85, optimize=True)
             data["filled_image_url"] = f"/uploads/{output_filename}"
+            print(f"Document filled successfully: {output_filename}")
             
         except Exception as e:
             print(f"Render Error: {e}")
+            import traceback
+            traceback.print_exc()
+            # Don't set filled_image_url if there was an error
+            if "filled_image_url" in data:
+                del data["filled_image_url"]
+    elif doc_path:
+        # Document provided but no valid fields to fill
+        print(f"Warning: Document provided but no valid fields to fill. visual_fields: {len(data.get('visual_fields', []))}, checkbox_fields: {len(data.get('checkbox_fields', []))}")
+        data["confirmation_message"] = "Document uploaded but no valid fields were found to fill. Please check your input."
 
     for f in files_to_send: genai.delete_file(f.name)
     return json.dumps(data)
@@ -718,9 +768,17 @@ def analyze_audio_with_gemini(audio_path, user_prompt, language='en'):
     target_lang = lang_map.get(language, "English")
 
     audio_file = genai.upload_file(path=audio_path)
-    while audio_file.state.name == "PROCESSING":
-        time.sleep(1)
+    # Optimized: Check file state with timeout and refresh
+    max_wait = 30
+    wait_time = 0
+    while audio_file.state.name == "PROCESSING" and wait_time < max_wait:
+        time.sleep(0.5)  # Reduced from 1 second
         audio_file = genai.get_file(audio_file.name)
+        wait_time += 0.5
+    
+    if audio_file.state.name != "ACTIVE":
+        print(f"Audio upload failed or timed out: {audio_file.state.name}")
+        raise Exception("Audio upload failed")
 
     model = genai.GenerativeModel(
         model_name=MODEL_NAME,
@@ -900,15 +958,22 @@ def process_form_voice():
     doc = request.files.get('form_doc')
     
     a_path = os.path.join(UPLOAD_FOLDER, "v.wav") if audio else None
-    if a_path: audio.save(a_path)
-    d_path = os.path.join(UPLOAD_FOLDER, doc.filename) if doc else None
-    if d_path: doc.save(d_path)
+    if a_path and audio: 
+        audio.save(a_path)
+    
+    d_path = None
+    if doc and doc.filename:
+        d_path = os.path.join(UPLOAD_FOLDER, secure_filename(doc.filename))
+        doc.save(d_path)
 
     try:
-        res_str = analyze_form_voice(a_path, request.form.get('text_input'), request.form.get('mode'), d_path, 'en')
+        res_str = analyze_form_voice(a_path, request.form.get('text_input'), request.form.get('mode'), d_path, lang)
         return jsonify(amazon_translate_dict(json.loads(res_str), lang))
     finally:
-        if a_path and os.path.exists(a_path): os.remove(a_path)        
+        if a_path and os.path.exists(a_path): 
+            os.remove(a_path)
+        if d_path and os.path.exists(d_path): 
+            os.remove(d_path)        
         
 if __name__ == '__main__':
     # Use the port assigned by the server, default to 5000
