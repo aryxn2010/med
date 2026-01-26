@@ -2,6 +2,7 @@ import os
 import time
 from flask import Flask, render_template, request, jsonify
 import google.generativeai as genai
+from google.generativeai.types import HarmCategory, HarmBlockThreshold
 from werkzeug.utils import secure_filename
 from datetime import datetime
 import json
@@ -244,19 +245,19 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 import uuid # <--- ADD THIS AT THE TOP WITH OTHER IMPORTS
 # --- UPDATED SYSTEM INSTRUCTION (UNIVERSAL PATHOLOGICAL MATCHER) ---
 # --- UPDATED SYSTEM INSTRUCTION (SIMPLE & PATIENT-FRIENDLY) ---
-SYSTEM_INSTRUCTION = """You are Sahayak.ai, a medical AI assistant. Analyze audio to identify respiratory conditions.
+SYSTEM_INSTRUCTION = """You are a clinical audio analysis assistant for medical respiratory assessment. Your role is to analyze audio recordings of breathing sounds and coughs for clinical evaluation purposes.
 
-PROTOCOL: Match audio to disease sounds (Croup, Asthma, Pneumonia). Calculate confidence (0-100) internally. Use simple language.
+CLINICAL PROTOCOL: Analyze respiratory audio patterns. Compare to known clinical patterns. Provide structured clinical assessment.
 
-OUTPUT JSON:
+OUTPUT FORMAT (Strict JSON):
 {
   "valid_audio": true,
-  "universal_match": {"disease_name": "Condition Name", "similarity_score": 95},
-  "severity": "Moderate/High/Low",
+  "universal_match": {"disease_name": "Clinical Condition", "similarity_score": 85},
+  "severity": "Low/Moderate/High",
   "infection_type": "Viral/Bacterial/Chronic/Irritation",
-  "simple_explanation": "Plain explanation without quotes or percentages.",
-  "audio_characteristics": "What you heard in plain English.",
-  "recommendation": "Actionable advice."
+  "simple_explanation": "Clinical observation in plain language.",
+  "audio_characteristics": "Clinical description of audio patterns.",
+  "recommendation": "Clinical guidance."
 }"""
 
 MEDICINE_SYSTEM_INSTRUCTION = f"""
@@ -368,7 +369,19 @@ def analyze_vision_with_gemini(image_paths, scan_type, user_prompt="", language=
     if not image_paths:
         content_payload.append(f"SYSTEM NOTICE: No image provided. Answer strictly based on text in {target_lang}.")
 
-    model = genai.GenerativeModel(model_name=MODEL_NAME, system_instruction=sys_instruction)
+    # Configure safety settings for vision analysis
+    safety_config_vision = {
+        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_ONLY_HIGH
+    }
+    
+    model = genai.GenerativeModel(
+        model_name=MODEL_NAME,
+        system_instruction=sys_instruction,
+        safety_settings=safety_config_vision
+    )
     
     try:
         response = model.generate_content(
@@ -628,12 +641,23 @@ def analyze_form_voice(audio_path, text_input, mode, doc_path=None, language='en
             upload_elapsed = time.time() - upload_start
             print(f"✅ [FORM] Audio uploaded in {upload_elapsed:.1f}s")
             
-            # Use faster flash model for transcription
-            transcribe_model = genai.GenerativeModel("gemini-3-flash-preview")
+            # Configure safety settings for transcription
+            safety_config_form = {
+                HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+                HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+                HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+                HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_ONLY_HIGH
+            }
+            
+            # Use faster flash model for transcription with relaxed safety settings
+            transcribe_model = genai.GenerativeModel(
+                "gemini-3-flash-preview",
+                safety_settings=safety_config_form
+            )
             
             print(f"🎙️ [FORM] Transcribing audio...")
             transcribe_res = transcribe_model.generate_content(
-                [audio_file, f"Transcribe this audio exactly into {target_lang}. Return ONLY the text."],
+                [audio_file, f"Transcribe this medical audio recording exactly into {target_lang}. Return ONLY the transcribed text, no additional commentary."],
                 generation_config={"max_output_tokens": 500},  # Limit tokens for speed
                 request_options={"timeout": 60}  # Extended timeout
             )
@@ -697,10 +721,21 @@ JSON:
   "checkbox_fields": [{{"key": "Label", "value_rect": [ymin, xmin, ymax, xmax]}}]
 }}"""
 
-    # Use flash model for faster processing when no document, pro when document needs analysis
-    model_name = "gemini-3-flash-preview" if not doc_path else "gemini-3-flash-preview"  # Use flash for both - much faster
+    # Configure safety settings for form analysis
+    safety_config_form = {
+        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_ONLY_HIGH
+    }
+    
+    # Use flash model for faster processing with relaxed safety settings
+    model_name = "gemini-3-flash-preview"
     print(f"🤖 [FORM] Using {model_name} for form analysis...")
-    model = genai.GenerativeModel(model_name=model_name)
+    model = genai.GenerativeModel(
+        model_name=model_name,
+        safety_settings=safety_config_form
+    )
     
     try:
         analysis_start = time.time()
@@ -989,16 +1024,25 @@ def analyze_audio_with_gemini(audio_path, user_prompt, language='en'):
         upload_elapsed = time.time() - upload_start
         print(f"✅ [AUDIO] Upload complete in {upload_elapsed:.1f}s")
 
-        # Use flash model for speed - it's still very accurate for audio analysis
-        # Flash is 3-5x faster than pro while maintaining high accuracy
+        # Configure safety settings to be less restrictive for medical audio analysis
+        safety_config = {
+            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_ONLY_HIGH
+        }
+        
+        # Try flash model first, fallback to pro if safety filters trigger
+        use_pro_model = False
         print(f"🤖 [AUDIO] Using gemini-3-flash-preview for fast analysis...")
         model = genai.GenerativeModel(
-            model_name="gemini-3-flash-preview",  # Much faster, still accurate
-            system_instruction=SYSTEM_INSTRUCTION
+            model_name="gemini-3-flash-preview",
+            system_instruction=SYSTEM_INSTRUCTION,
+            safety_settings=safety_config
         )
         
-        # Ultra-optimized prompt - minimal tokens
-        prompt = f"Analyze audio. Context: {user_prompt}. Lang: {target_lang}. JSON only."
+        # Clinical prompt - more specific to reduce false positives
+        prompt = f"Clinical audio analysis. Patient context: {user_prompt if user_prompt else 'General respiratory assessment'}. Output language: {target_lang}. Return structured JSON analysis only."
 
         # Retry logic with longer timeouts
         response = None
@@ -1032,12 +1076,24 @@ def analyze_audio_with_gemini(audio_path, user_prompt, language='en'):
                     else:
                         raise ValueError("Empty response from API")
                 except ValueError as ve:
-                    # Check if it's a safety filter error - don't retry these
+                    # Check if it's a safety filter error
                     error_msg = str(ve).lower()
                     if "safety" in error_msg or "blocked" in error_msg or "recitation" in error_msg:
                         print(f"🚫 [AUDIO] Content blocked by safety filters on attempt {attempt + 1}")
-                        # Don't retry safety filter errors - return immediately
-                        raise ValueError("Response was blocked by safety filters. The audio content may have triggered content filters. Please try with a different recording.")
+                        
+                        # Fallback: Try pro model if flash was blocked and we haven't tried pro yet
+                        if not use_pro_model and attempt == 0:
+                            print(f"🔄 [AUDIO] Switching to gemini-3-pro-preview as fallback...")
+                            use_pro_model = True
+                            model = genai.GenerativeModel(
+                                model_name=MODEL_NAME,  # Use pro model
+                                system_instruction=SYSTEM_INSTRUCTION,
+                                safety_settings=safety_config
+                            )
+                            continue  # Retry with pro model
+                        else:
+                            # Both models blocked - return error
+                            raise ValueError("Response was blocked by safety filters. The audio content may have triggered content filters. Please try with a different recording.")
                     else:
                         raise
                 
