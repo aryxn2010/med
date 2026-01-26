@@ -369,12 +369,11 @@ def analyze_vision_with_gemini(image_paths, scan_type, user_prompt="", language=
     if not image_paths:
         content_payload.append(f"SYSTEM NOTICE: No image provided. Answer strictly based on text in {target_lang}.")
 
-    # Configure safety settings for vision analysis
     safety_config_vision = {
         HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
         HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
         HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_ONLY_HIGH
+        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE  # <--- CHANGED
     }
     
     model = genai.GenerativeModel(
@@ -641,12 +640,11 @@ def analyze_form_voice(audio_path, text_input, mode, doc_path=None, language='en
             upload_elapsed = time.time() - upload_start
             print(f"✅ [FORM] Audio uploaded in {upload_elapsed:.1f}s")
             
-            # Configure safety settings for transcription
             safety_config_form = {
                 HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
                 HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
                 HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-                HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_ONLY_HIGH
+                HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE # <--- CHANGED
             }
             
             # Use faster flash model for transcription with relaxed safety settings
@@ -1024,12 +1022,11 @@ def analyze_audio_with_gemini(audio_path, user_prompt, language='en'):
         upload_elapsed = time.time() - upload_start
         print(f"✅ [AUDIO] Upload complete in {upload_elapsed:.1f}s")
 
-        # Configure safety settings to be less restrictive for medical audio analysis
         safety_config = {
             HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
             HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
             HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_ONLY_HIGH
+            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE # <--- CHANGED
         }
         
         # Try flash model first, fallback to pro if safety filters trigger
