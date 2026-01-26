@@ -85,29 +85,20 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 import uuid # <--- ADD THIS AT THE TOP WITH OTHER IMPORTS
 # --- UPDATED SYSTEM INSTRUCTION (UNIVERSAL PATHOLOGICAL MATCHER) ---
 # --- UPDATED SYSTEM INSTRUCTION (SIMPLE & PATIENT-FRIENDLY) ---
-SYSTEM_INSTRUCTION = """
-You are Sahayak.ai, a compassionate medical AI assistant.
-Your task is to analyze audio and identify respiratory conditions using Universal Vector Matching.
+SYSTEM_INSTRUCTION = """You are Sahayak.ai, a medical AI assistant. Analyze audio to identify respiratory conditions.
 
-### ANALYSIS PROTOCOL:
-1. **Listen & Match**: Compare the audio to your internal database of disease sounds (Croup, Asthma, Pneumonia, etc.).
-2. **Internal Scoring**: Calculate a match confidence (0-100) internally to ensure accuracy, but **DO NOT** show this number to the user.
-3. **Simplify**: Translate all findings into simple, easy-to-understand language for a non-medical user.
+PROTOCOL: Match audio to disease sounds (Croup, Asthma, Pneumonia). Calculate confidence (0-100) internally. Use simple language.
 
-### OUTPUT FORMAT (Strict JSON):
+OUTPUT JSON:
 {
   "valid_audio": true,
-  "universal_match": {
-    "disease_name": "Medical Name (e.g., Croup)",
-    "similarity_score": 95
-  },
-  "severity": "Moderate / High / Low",
-  "infection_type": "Viral / Bacterial / Chronic / Irritation",
-  "simple_explanation": "A direct, clear explanation of what this condition is. Do NOT use quotes. Do NOT mention percentages. Example: 'This sounds like Croup, which is usually caused by a virus and causes swelling in the throat.'",
-  "audio_characteristics": "What did you hear? Explain in plain English. Example: 'We detected a distinctive barking sound, similar to a seal, and some whistling noises when breathing in.'",
-  "recommendation": "Simple, actionable advice. Example: 'Keep the patient calm and try sitting in a steamy bathroom to help them breathe.'"
-}
-"""
+  "universal_match": {"disease_name": "Condition Name", "similarity_score": 95},
+  "severity": "Moderate/High/Low",
+  "infection_type": "Viral/Bacterial/Chronic/Irritation",
+  "simple_explanation": "Plain explanation without quotes or percentages.",
+  "audio_characteristics": "What you heard in plain English.",
+  "recommendation": "Actionable advice."
+}"""
 
 MEDICINE_SYSTEM_INSTRUCTION = f"""
 You are an AI Clinical Expert. 
@@ -220,10 +211,23 @@ def analyze_vision_with_gemini(image_paths, scan_type, user_prompt="", language=
 
     model = genai.GenerativeModel(model_name=MODEL_NAME, system_instruction=sys_instruction)
     
-    response = model.generate_content(
-        content_payload,
-        generation_config={"response_mime_type": "application/json"}
-    )
+    try:
+        response = model.generate_content(
+            content_payload,
+            generation_config={
+                "response_mime_type": "application/json",
+                "max_output_tokens": 1500  # Limit for faster response
+            },
+            request_options={"timeout": 60}  # 60 second timeout
+        )
+    except Exception as e:
+        # Clean up uploaded files on error
+        for ref in uploaded_refs:
+            try:
+                genai.delete_file(ref.name)
+            except:
+                pass
+        raise  # Re-raise to be handled by caller
     
     for ref in uploaded_refs:
         genai.delete_file(ref.name)
@@ -410,82 +414,106 @@ def analyze_form_voice(audio_path, text_input, mode, doc_path=None, language='en
     lang_map = {"en": "English", "hi": "Hindi", "kn": "Kannada"}
     target_lang = lang_map.get(language, "English")
 
-    # --- STEP 1: TRANSCRIBE AUDIO ---
+    # --- STEP 1: TRANSCRIBE AUDIO (OPTIMIZED) ---
     final_text_input = text_input or ""
+    audio_file = None
     
     if audio_path:
         try:
+            # Upload audio file with faster checking
             audio_file = genai.upload_file(path=audio_path)
-            while audio_file.state.name == "PROCESSING": time.sleep(1)
+            upload_timeout = 25  # Reduced timeout
+            upload_start = time.time()
             
+            while audio_file.state.name == "PROCESSING":
+                if time.time() - upload_start > upload_timeout:
+                    raise TimeoutError("Audio upload timeout")
+                time.sleep(0.3)  # Faster checking interval
+                audio_file = genai.get_file(audio_file.name)
+            
+            # Use faster flash model for transcription
             transcribe_model = genai.GenerativeModel("gemini-3-flash-preview")
             
             transcribe_res = transcribe_model.generate_content(
                 [audio_file, f"Transcribe this audio exactly into {target_lang}. Return ONLY the text."],
+                generation_config={"max_output_tokens": 500},  # Limit tokens for speed
+                request_options={"timeout": 30}  # Reduced timeout
             )
             
             transcribed_text = transcribe_res.text.strip()
             final_text_input += f" {transcribed_text}"
-            genai.delete_file(audio_file.name)
+            
+            # Clean up immediately after transcription
+            if audio_file:
+                try:
+                    genai.delete_file(audio_file.name)
+                except:
+                    pass
             
         except Exception as e:
             print(f"Transcription Error: {e}")
+            # Clean up on error
+            if audio_file:
+                try:
+                    genai.delete_file(audio_file.name)
+                except:
+                    pass
 
-    # --- STEP 2: PREPARE IMAGE ---
+    # --- STEP 2: PREPARE IMAGE (OPTIMIZED) ---
     if doc_path:
         doc_file = genai.upload_file(path=doc_path)
-        while doc_file.state.name == "PROCESSING": time.sleep(1)
+        upload_timeout = 25
+        upload_start = time.time()
+        
+        while doc_file.state.name == "PROCESSING":
+            if time.time() - upload_start > upload_timeout:
+                raise TimeoutError("Document upload timeout")
+            time.sleep(0.3)  # Faster checking
+            doc_file = genai.get_file(doc_file.name)
+        
         files_to_send.append(doc_file)
 
-    # --- STEP 3: LOGIC & ALIGNMENT ---
-    # --- STEP 3: LOGIC & ALIGNMENT ---
-    # --- STEP 3: LOGIC & ALIGNMENT ---
-    # --- STEP 3: LOGIC & ALIGNMENT ---
-    EXTREME_PROMPT = f"""
-    You are an expert Document Typesetter.
-    
-    ### INPUT:
-    User Instructions: "{final_text_input}"
-    Target Language: {target_lang}
-    
-    ### TASK:
-    1. **Text Fields:** Map ONLY spoken values to form fields.
-       - **LANGUAGE RULE:** The "value" field MUST be in **{target_lang}**. If the user speaks Kannada, the form fill text MUST be in Kannada script. Do NOT translate to English.
-       - **CRITICAL:** Start the bounding box (`xmin`) **AFTER** the label text ends. 
-       - Leave a **gap** equivalent to 4 letter spaces between the label and the start of your box.
-       
-    2. **Checkboxes:** Identify checkboxes to TICK (only if explicitly requested).
-       - Return the EXACT INNER BOUNDARY of the box.
-    
-    ### BOUNDING BOX RULES (`value_rect`):
-    - [ymin, xmin, ymax, xmax] must cover the **Blank Writing Space** only.
-    - `ymin` = Top of the handwriting line.
-    - `ymax` = The visible underline itself (baseline).
-    - `xmin` = The start of the empty space (NOT the start of the line).
-    
-    ### JSON OUTPUT:
-    {{
-      "visual_fields": [
-        {{ "key": "Field Name", "value": "Text Data", "value_rect": [ymin, xmin, ymax, xmax] }}
-      ],
-      "checkbox_fields": [
-        {{ "key": "Checkbox Label", "value_rect": [ymin, xmin, ymax, xmax] }}
-      ]
-    }}
-    """
+    # --- STEP 3: LOGIC & ALIGNMENT (OPTIMIZED) ---
+    # Optimized prompt - shorter and more direct
+    EXTREME_PROMPT = f"""Document Typesetter. Map "{final_text_input}" to form fields in {target_lang}.
 
-    model = genai.GenerativeModel(model_name="gemini-3-pro-preview")
+TASK:
+1. Text Fields: Map spoken values. "value" in {target_lang}. Start xmin AFTER label ends (4 spaces gap).
+2. Checkboxes: Return exact inner boundary if requested.
+
+BOUNDING BOX: [ymin, xmin, ymax, xmax] = blank writing space only. ymax = baseline.
+
+JSON:
+{{
+  "visual_fields": [{{"key": "Field", "value": "Data", "value_rect": [ymin, xmin, ymax, xmax]}}],
+  "checkbox_fields": [{{"key": "Label", "value_rect": [ymin, xmin, ymax, xmax]}}]
+}}"""
+
+    # Use flash model for faster processing when no document, pro when document needs analysis
+    model_name = "gemini-3-flash-preview" if not doc_path else "gemini-3-pro-preview"
+    model = genai.GenerativeModel(model_name=model_name)
     
     try:
         response = model.generate_content(
             files_to_send + [EXTREME_PROMPT], 
-            generation_config={"response_mime_type": "application/json"}
+            generation_config={
+                "response_mime_type": "application/json",
+                "max_output_tokens": 1500,  # Reduced for faster response
+                "temperature": 0.3  # Lower temperature for faster, more deterministic output
+            },
+            request_options={"timeout": 45}  # Reduced timeout
         )
         data = json.loads(response.text)
         if "visual_fields" not in data: data["visual_fields"] = []
         if "checkbox_fields" not in data: data["checkbox_fields"] = []
     except Exception as e:
         print(f"AI/JSON Error: {e}")
+        # Clean up files on error
+        for f in files_to_send:
+            try:
+                genai.delete_file(f.name)
+            except:
+                pass
         return json.dumps({"visual_fields": [], "confirmation_message": "Error processing form logic."})
 
     # --- STEP 4: TYPESETTER ENGINE ---
@@ -612,13 +640,20 @@ def analyze_form_voice(audio_path, text_input, mode, doc_path=None, language='en
                     draw.line([p2, p3], fill=(0, 0, 0), width=thickness)
 
             output_filename = f"filled_{int(time.time())}.jpg"
-            img.save(os.path.join(UPLOAD_FOLDER, output_filename), quality=95)
+            # Use slightly lower quality for faster processing (85 instead of 95)
+            img.save(os.path.join(UPLOAD_FOLDER, output_filename), quality=85, optimize=True)
             data["filled_image_url"] = f"/uploads/{output_filename}"
             
         except Exception as e:
             print(f"Render Error: {e}")
 
-    for f in files_to_send: genai.delete_file(f.name)
+    # Clean up uploaded files
+    for f in files_to_send:
+        try:
+            genai.delete_file(f.name)
+        except:
+            pass
+    
     return json.dumps(data)
 @app.route('/uploads/<filename>')
 def uploaded_file(filename):
@@ -667,34 +702,81 @@ def analyze_audio_with_gemini(audio_path, user_prompt, language='en'):
     lang_map = {"en": "English", "hi": "Hindi", "kn": "Kannada"}
     target_lang = lang_map.get(language, "English")
 
-    audio_file = genai.upload_file(path=audio_path)
-    while audio_file.state.name == "PROCESSING":
-        time.sleep(1)
-        audio_file = genai.get_file(audio_file.name)
-
-    model = genai.GenerativeModel(
-        model_name=MODEL_NAME,
-        system_instruction=SYSTEM_INSTRUCTION
-    )
-    
-    prompt = f"""
-    Analyze this audio.
-    Context: {user_prompt}
-    Target Language: {target_lang}.
-    
-    CRITICAL INSTRUCTION: 
-    1. Output strictly plain text for explanations (NO markdown, NO quotes).
-    2. Translate all value strings to {target_lang}.
-    """
-
-    response = model.generate_content(
-        [audio_file, prompt],
-        generation_config={"response_mime_type": "application/json", "temperature": 0.2}
-    )
-
-    genai.delete_file(audio_file.name)
+    audio_file = None
+    max_retries = 3
+    retry_delay = 1
     
     try:
+        # Upload audio file with timeout protection (optimized)
+        audio_file = genai.upload_file(path=audio_path)
+        upload_timeout = 25  # Reduced timeout
+        upload_start = time.time()
+        
+        while audio_file.state.name == "PROCESSING":
+            if time.time() - upload_start > upload_timeout:
+                raise TimeoutError("Audio upload timeout")
+            time.sleep(0.3)  # Faster checking interval (reduced from 0.5s)
+            audio_file = genai.get_file(audio_file.name)
+
+        model = genai.GenerativeModel(
+            model_name=MODEL_NAME,
+            system_instruction=SYSTEM_INSTRUCTION
+        )
+        
+        # Optimized prompt - shorter for faster processing
+        prompt = f"Analyze audio. Context: {user_prompt}. Language: {target_lang}. Output JSON only, plain text values."
+
+        # Retry logic with exponential backoff
+        response = None
+        for attempt in range(max_retries):
+            try:
+                # Set explicit timeout (45 seconds per attempt - reduced for faster failure)
+                response = model.generate_content(
+                    [audio_file, prompt],
+                    generation_config={
+                        "response_mime_type": "application/json",
+                        "temperature": 0.2,
+                        "max_output_tokens": 800  # Further reduced for faster response
+                    },
+                    request_options={"timeout": 45}  # Reduced timeout for faster retries
+                )
+                
+                # Verify response is valid
+                if response and hasattr(response, 'text') and response.text:
+                    # Success - break out of retry loop
+                    break
+                else:
+                    raise ValueError("Invalid response from API")
+                
+            except Exception as e:
+                error_str = str(e).lower()
+                
+                # Check if it's a timeout/deadline error
+                if "deadline" in error_str or "timeout" in error_str or "504" in error_str:
+                    if attempt < max_retries - 1:
+                        wait_time = retry_delay * (2 ** attempt)  # Exponential backoff
+                        print(f"⚠️ Timeout on attempt {attempt + 1}/{max_retries}. Retrying in {wait_time}s...")
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        # Last attempt failed - return error response
+                        raise TimeoutError(f"Audio analysis timed out after {max_retries} attempts")
+                else:
+                    # Non-timeout error - re-raise immediately
+                    raise
+        
+        # Verify we have a valid response
+        if not response or not hasattr(response, 'text'):
+            raise ValueError("No valid response received from API")
+        
+        # Clean up uploaded file
+        if audio_file:
+            try:
+                genai.delete_file(audio_file.name)
+            except:
+                pass  # Ignore cleanup errors
+        
+        # Process response
         data = json.loads(response.text)
         
         # FIX: Handle case where Gemini returns a list instead of a dict
@@ -744,15 +826,33 @@ def analyze_audio_with_gemini(audio_path, user_prompt, language='en'):
         
         return json.dumps(formatted_output)
 
+    except TimeoutError as e:
+        print(f"⏱️ Timeout Error: {e}")
+        return json.dumps({
+            "valid_audio": True,
+            "condition": "Processing Timeout",
+            "disease_type": "System Timeout",
+            "simple_explanation": "The analysis took too long. Please try with a shorter audio clip or check your connection.",
+            "recommendation": "Try recording a shorter audio sample (under 30 seconds).",
+            "acoustic_analysis": "N/A",
+            "severity": "Unknown"
+        })
     except Exception as e:
-        print(f"Logic Error: {e}")
+        print(f"❌ Logic Error: {e}")
+        # Clean up on any error
+        if audio_file:
+            try:
+                genai.delete_file(audio_file.name)
+            except:
+                pass
         return json.dumps({
             "valid_audio": True,
             "condition": "Analysis Error",
             "disease_type": "System Error",
             "simple_explanation": "Could not process audio data safely. Please try again.",
-            "recommendation": "Check internet connection.",
-            "acoustic_analysis": "N/A"
+            "recommendation": "Check internet connection and try again.",
+            "acoustic_analysis": "N/A",
+            "severity": "Unknown"
         })    
 @app.route('/')
 
@@ -829,9 +929,33 @@ def analyze():
         # 1. Analyze in English (highest accuracy)
         res_str = analyze_audio_with_gemini(filepath, request.form.get('user_prompt', ''), 'en')
         # 2. Translate everything via Amazon
-        return jsonify(amazon_translate_dict(json.loads(res_str), lang))
+        result = json.loads(res_str)
+        return jsonify(amazon_translate_dict(result, lang))
+    except json.JSONDecodeError as e:
+        print(f"❌ JSON Decode Error: {e}")
+        return jsonify({
+            "error": "Invalid response format",
+            "valid_audio": True,
+            "condition": "Processing Error",
+            "simple_explanation": "Could not parse the analysis result. Please try again.",
+            "recommendation": "Retry with a shorter audio clip."
+        }), 500
+    except Exception as e:
+        print(f"❌ Analyze Route Error: {e}")
+        traceback.print_exc()
+        return jsonify({
+            "error": str(e),
+            "valid_audio": True,
+            "condition": "System Error",
+            "simple_explanation": "An error occurred during analysis. Please try again.",
+            "recommendation": "Check your connection and retry."
+        }), 500
     finally:
-        if os.path.exists(filepath): os.remove(filepath)        
+        if os.path.exists(filepath): 
+            try:
+                os.remove(filepath)
+            except:
+                pass        
 @app.route('/process_form_voice', methods=['POST'])
 def process_form_voice():
     lang = request.form.get('language', 'en')
