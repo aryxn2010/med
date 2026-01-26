@@ -2233,6 +2233,8 @@ function startScrollingWave(stream, containerId) {
     }
     
     console.log("Starting waveform visualization for:", containerId);
+    console.log("Stream tracks:", stream.getTracks().length);
+    console.log("Stream active:", stream.getTracks().some(t => t.readyState === 'live'));
     
     // Clean up previous visualization
     if (scrollInterval) {
@@ -2247,12 +2249,27 @@ function startScrollingWave(stream, containerId) {
             console.log("Source already disconnected");
         }
     }
+    if (scrollContext && scrollContext.state !== 'closed') {
+        try {
+            scrollContext.close();
+        } catch(e) {
+            console.log("Context already closed or can't close");
+        }
+    }
     
     container.innerHTML = ""; 
     container.className = "scrolling-wave"; 
     container.style.display = "flex";
 
-    // Create new AudioContext for each visualization to avoid conflicts
+    // Verify stream has active audio tracks
+    const audioTracks = stream.getAudioTracks();
+    if (audioTracks.length === 0) {
+        console.error("No audio tracks in stream!");
+        return;
+    }
+    console.log("Audio tracks found:", audioTracks.length, "State:", audioTracks[0].readyState);
+
+    // Create new AudioContext for each visualization
     try {
         scrollContext = new (window.AudioContext || window.webkitAudioContext)();
         console.log("AudioContext created, state:", scrollContext.state);
@@ -2261,36 +2278,53 @@ function startScrollingWave(stream, containerId) {
         return;
     }
     
-    // Resume AudioContext if suspended (required by browsers)
-    if (scrollContext.state === 'suspended') {
-        scrollContext.resume().then(() => {
-            console.log("AudioContext resumed");
+    // ALWAYS resume AudioContext - browsers require user interaction
+    const resumeContext = async () => {
+        try {
+            if (scrollContext.state === 'suspended') {
+                await scrollContext.resume();
+                console.log("AudioContext resumed, new state:", scrollContext.state);
+            }
             setupVisualization();
-        }).catch(err => {
+        } catch(err) {
             console.error("Failed to resume AudioContext:", err);
-        });
-    } else {
-        setupVisualization();
-    }
+            // Try to setup anyway
+            setupVisualization();
+        }
+    };
+    
+    // Resume immediately
+    resumeContext();
     
     function setupVisualization() {
         try {
+            // Verify context is running
+            if (scrollContext.state === 'closed') {
+                console.error("AudioContext is closed!");
+                return;
+            }
+            
             // Create new analyser with better settings for voice
             scrollAnalyser = scrollContext.createAnalyser();
-            scrollAnalyser.fftSize = 256; // Increased for better resolution
-            scrollAnalyser.smoothingTimeConstant = 0.1; // Very low for immediate response
+            scrollAnalyser.fftSize = 512; // Increased for better resolution
+            scrollAnalyser.smoothingTimeConstant = 0.0; // No smoothing for immediate response
+            scrollAnalyser.minDecibels = -90;
+            scrollAnalyser.maxDecibels = -10;
             
             // Create new source and connect
             scrollSource = scrollContext.createMediaStreamSource(stream);
             scrollSource.connect(scrollAnalyser);
-            console.log("Audio source connected to analyser");
+            console.log("Audio source connected to analyser, context state:", scrollContext.state);
             
             // Use time-domain data for actual waveform (better for voice sync)
             const timeDataArray = new Uint8Array(scrollAnalyser.fftSize);
             const freqDataArray = new Uint8Array(scrollAnalyser.frequencyBinCount);
 
+            let frameCount = 0;
             scrollInterval = setInterval(() => {
                 try {
+                    frameCount++;
+                    
                     // Get both time-domain (waveform) and frequency data
                     scrollAnalyser.getByteTimeDomainData(timeDataArray);
                     scrollAnalyser.getByteFrequencyData(freqDataArray);
@@ -2298,40 +2332,47 @@ function startScrollingWave(stream, containerId) {
                     // Calculate volume from time-domain data (actual waveform amplitude)
                     let sum = 0;
                     let max = 0;
+                    let nonZeroCount = 0;
                     for(let i = 0; i < timeDataArray.length; i++) {
                         const value = Math.abs(timeDataArray[i] - 128); // Center around 0
                         sum += value;
                         if (value > max) max = value;
+                        if (value > 1) nonZeroCount++;
                     }
                     
                     // Use RMS (Root Mean Square) for better volume representation
                     const rms = Math.sqrt(sum / timeDataArray.length);
                     const normalizedVolume = Math.min(1, (rms / 128) * 2); // Normalize to 0-1
                     
-                    // Also get frequency data for voice range (300-3400 Hz roughly)
+                    // Also get frequency data for voice range
                     let voiceSum = 0;
-                    for(let i = 2; i < 30; i++) {
+                    for(let i = 1; i < 50; i++) { // Wider range
                         voiceSum += freqDataArray[i];
                     }
-                    const voiceLevel = voiceSum / 28;
+                    const voiceLevel = voiceSum / 49;
                     
-                    // Combine time-domain (volume) and frequency (voice presence) for better visualization
-                    const combinedLevel = (normalizedVolume * 0.7) + ((voiceLevel / 255) * 0.3);
+                    // Combine time-domain (volume) and frequency (voice presence)
+                    const combinedLevel = (normalizedVolume * 0.6) + ((voiceLevel / 255) * 0.4);
                     
-                    // Calculate bar height with better sensitivity - more responsive
-                    let baseHeight = 4; // Minimum height
-                    if (combinedLevel > 0.02) { // Lower threshold for more sensitivity
-                        baseHeight = 4 + (combinedLevel * 56); // Scale to 4-60px range
+                    // Debug every 20 frames
+                    if (frameCount % 20 === 0) {
+                        console.log(`Waveform: rms=${rms.toFixed(2)}, vol=${normalizedVolume.toFixed(3)}, voice=${voiceLevel.toFixed(1)}, combined=${combinedLevel.toFixed(3)}, max=${max}`);
                     }
                     
-                    // Add slight variation for natural look
-                    const variation = 0.85 + (combinedLevel * 0.3); // More variation based on actual data
-                    let finalHeight = Math.min(60, Math.max(4, baseHeight * variation));
+                    // Calculate bar height - always show something, even when quiet
+                    let baseHeight = 6; // Minimum visible height
+                    if (combinedLevel > 0.01 || max > 2) { // Very low threshold
+                        baseHeight = 6 + (combinedLevel * 54); // Scale to 6-60px range
+                    }
+                    
+                    // Add variation for natural look
+                    const variation = 0.8 + (Math.random() * 0.4); // More variation
+                    let finalHeight = Math.min(60, Math.max(6, baseHeight * variation));
 
                     const bar = document.createElement('div');
                     bar.classList.add('wave-bar-scroll');
                     bar.style.height = `${finalHeight}px`;
-                    bar.style.opacity = combinedLevel > 0.05 ? 1 : 0.3; // More visible even when quiet
+                    bar.style.opacity = combinedLevel > 0.03 ? 1 : 0.5; // Always visible
 
                     container.appendChild(bar);
 
@@ -2345,9 +2386,12 @@ function startScrollingWave(stream, containerId) {
                 } catch(e) {
                     console.error("Error in waveform interval:", e);
                 }
-            }, 25); // Faster update for smoother animation (25ms = ~40fps)
+            }, 20); // Even faster update (20ms = 50fps)
+            
+            console.log("Waveform interval started");
         } catch(e) {
             console.error("Error setting up visualization:", e);
+            console.error(e.stack);
         }
     }
 }

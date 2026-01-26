@@ -451,20 +451,19 @@ def analyze_form_voice(audio_path, text_input, mode, doc_path=None, language='en
             # Use Gemini 3 for transcription (best model)
             transcribe_model = genai.GenerativeModel("gemini-3-flash-preview")  # Best model for transcription
             
-            # Improved transcription prompt - more direct
-            transcribe_prompt = f"""You are a speech-to-text transcription system. Listen to this audio and write down EXACTLY what the person says.
+            # Improved transcription prompt - STRICT, NO EXAMPLES
+            transcribe_prompt = f"""Listen to this audio and transcribe ONLY what you actually hear.
 
-IMPORTANT:
-- Write down every single word you hear
-- Include all names, numbers, dates, addresses
-- Keep the exact words and phrases
-- Do NOT add punctuation unless you hear pauses
-- Do NOT summarize or interpret
-- If you hear "Name is John Smith", write "Name is John Smith"
-- If you hear "Age is 25 years", write "Age is 25 years"
-- If you hear "Date is January 27", write "Date is January 27"
+CRITICAL RULES:
+1. Write down EXACTLY what the person says - word for word
+2. Do NOT add any information that wasn't in the audio
+3. Do NOT use example names like "John Smith" or "Jane Doe"
+4. Do NOT add placeholder data or make up information
+5. If you hear "Aryan Gupta", write "Aryan Gupta" - NOT "John Smith"
+6. If the person only says a few words, only write those few words
+7. Output in {target_lang} language
 
-Output ONLY the transcribed text in {target_lang}. No explanations, no quotes, just the words:"""
+What did the person actually say in this audio? Write ONLY that:"""
             
             print(f"Starting transcription with audio file: {audio_file.name}")
             transcribe_res = transcribe_model.generate_content(
@@ -566,42 +565,29 @@ Output ONLY the transcribed text in {target_lang}. No explanations, no quotes, j
             })
 
     # --- STEP 3: LOGIC & ALIGNMENT ---
-    # Enhanced prompt for better field extraction - more aggressive extraction
-    EXTREME_PROMPT = f"""You are an expert document form filler. Your job is to fill out the form in the image based on what the user said.
+    # Enhanced prompt - STRICT about using ONLY user input, NO examples
+    EXTREME_PROMPT = f"""You are a document form filler. Fill the form in the image using ONLY the information from the user's actual input below.
 
-USER SAID: "{final_text_input}"
+USER'S ACTUAL INPUT (use ONLY this, nothing else):
+"{final_text_input}"
 
-STEP 1: Look at the document image. Identify every form field you see (Name, Age, Date, Address, Phone, Email, etc. and any checkboxes).
+CRITICAL RULES:
+1. Use ONLY the text above - do NOT add example data, placeholder names, or made-up information
+2. If the user said "fill the name as Aryan Gupta", extract: key="Name" or "Patient Name", value="Aryan Gupta"
+3. If the user said "name is John", extract: key="Name", value="John"
+4. Extract ONLY what the user actually said - nothing more, nothing less
+5. Look at the document image to find matching form fields
+6. Create bounding boxes (value_rect) for where to write each value
+7. value_rect format: [ymin, xmin, ymax, xmax] - xmin starts AFTER the label text, leave 4 spaces gap
+8. Values must be in {target_lang} language
 
-STEP 2: Analyze what the user said: "{final_text_input}"
-- Extract ANY names, numbers, dates, addresses, or other information mentioned
-- Even if the transcription is short, try to extract what you can
-- Look for common patterns: "Name is X", "Age is X", "Date is X", "Address is X"
-- If user says just "John" or "John Smith", assume it's for the Name field
-- If user says "25" or "25 years", assume it's for Age field
-- Be smart about matching partial information to form fields
-
-STEP 3: For each piece of information you extracted:
-- Find the matching field on the form
-- Create a bounding box (value_rect) for where to write the text
-- The bounding box should cover the blank space AFTER the field label
-
-CRITICAL:
-- Extract EVERYTHING the user mentioned, even if it seems incomplete
-- If user said "John", fill the Name field with "John"
-- If user said "25", fill the Age field with "25"
-- Be proactive - match partial information to likely fields
-- Value must be in {target_lang} language
-- value_rect format: [ymin, xmin, ymax, xmax] - start xmin AFTER the label, leave 4 spaces gap
-- Never use "none", "None", "N/A", or empty values
-
-OUTPUT JSON:
+OUTPUT JSON FORMAT:
 {{
-  "visual_fields": [{{"key": "Field Name", "value": "Extracted Value", "value_rect": [ymin, xmin, ymax, xmax]}}],
+  "visual_fields": [{{"key": "Field Name from Form", "value": "Value from User Input", "value_rect": [ymin, xmin, ymax, xmax]}}],
   "checkbox_fields": [{{"key": "Checkbox Label", "value_rect": [ymin, xmin, ymax, xmax]}}]
 }}
 
-IMPORTANT: Extract as much as possible from "{final_text_input}". Even single words or numbers should be matched to appropriate form fields."""
+REMEMBER: Use ONLY "{final_text_input}" - do NOT invent or add example data."""
 
     # Use Gemini 3 for document analysis (best model)
     model = genai.GenerativeModel(model_name="gemini-3-pro-preview")  # Best model for document analysis
@@ -634,6 +620,12 @@ IMPORTANT: Extract as much as possible from "{final_text_input}". Even single wo
         
         print(f"AI returned {len(data['visual_fields'])} visual_fields and {len(data['checkbox_fields'])} checkbox_fields")
         
+        # Debug: Print what fields were extracted
+        if data.get("visual_fields"):
+            print("Extracted fields:")
+            for field in data["visual_fields"]:
+                print(f"  - {field.get('key')}: '{field.get('value')}'")
+        
         # Fix: Filter out invalid fields (none, None, empty, etc.)
         invalid_values = ["none", "None", "N/A", "n/a", "null", "Null", ""]
         original_count = len(data["visual_fields"])
@@ -644,6 +636,43 @@ IMPORTANT: Extract as much as possible from "{final_text_input}". Even single wo
         filtered_count = len(data["visual_fields"])
         if original_count != filtered_count:
             print(f"Filtered out {original_count - filtered_count} invalid fields. Remaining: {filtered_count}")
+        
+        # Validate that extracted values match user input (filter hallucinations)
+        if final_text_input:
+            user_lower = final_text_input.lower()
+            user_words = set(user_lower.split())
+            filtered_fields = []
+            
+            for field in data["visual_fields"]:
+                value = str(field.get("value", "")).lower()
+                value_words = set(value.split())
+                
+                # Check if at least some words from the value appear in user input
+                # This allows for variations like "Aryan Gupta" vs "fill the name as Aryan Gupta"
+                matching_words = value_words.intersection(user_words)
+                
+                # Common hallucination patterns to filter out
+                hallucination_patterns = ["john smith", "john", "jane doe", "example", "sample", "test"]
+                is_hallucination = any(pattern in value for pattern in hallucination_patterns if pattern not in user_lower)
+                
+                if is_hallucination:
+                    print(f"⚠️ REMOVED hallucinated field: '{field.get('key')}' = '{field.get('value')}' (not in user input)")
+                    continue
+                
+                # If value has significant words, check if they match user input
+                if len(value_words) > 0:
+                    # Allow if at least 30% of value words match user input, or if value is short (likely a name/number)
+                    match_ratio = len(matching_words) / len(value_words) if value_words else 0
+                    if match_ratio >= 0.3 or len(value_words) <= 2:
+                        filtered_fields.append(field)
+                        print(f"✓ Valid field: '{field.get('key')}' = '{field.get('value')}'")
+                    else:
+                        print(f"⚠️ REMOVED field (low match): '{field.get('key')}' = '{field.get('value')}' (match ratio: {match_ratio:.2f})")
+                else:
+                    filtered_fields.append(field)
+            
+            data["visual_fields"] = filtered_fields
+            print(f"After validation: {len(data['visual_fields'])} valid fields remain")
         
     except Exception as e:
         print(f"AI/JSON Error: {e}")
@@ -793,8 +822,16 @@ IMPORTANT: Extract as much as possible from "{final_text_input}". Even single wo
             output_path = os.path.join(UPLOAD_FOLDER, output_filename)
             # Optimized: Use quality 85 instead of 95 for faster saving (minimal quality difference)
             img.save(output_path, quality=85, optimize=True)
-            data["filled_image_url"] = f"/uploads/{output_filename}"
-            print(f"Document filled successfully: {output_filename}")
+            
+            # Verify file was saved
+            if os.path.exists(output_path):
+                file_size = os.path.getsize(output_path)
+                print(f"✓ Document filled successfully: {output_filename} ({file_size} bytes)")
+                data["filled_image_url"] = f"/uploads/{output_filename}"
+                data["confirmation_message"] = "Document filled successfully."
+            else:
+                print(f"✗ ERROR: Filled document file was not saved: {output_path}")
+                raise Exception("Failed to save filled document")
             
         except Exception as e:
             print(f"Render Error: {e}")
