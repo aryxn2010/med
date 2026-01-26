@@ -11,6 +11,7 @@ import numpy as np # Ensure numpy is imported
 import os
 from PIL import Image, ImageDraw, ImageFont
 from flask import send_from_directory
+import re
 # --- CONFIGURATION ---
 import requests
 import warnings
@@ -77,7 +78,147 @@ except Exception as e:
     
     
 print("-------------------------------------\n")    
-MODEL_NAME = "gemini-3-pro-preview" 
+MODEL_NAME = "gemini-3-pro-preview"
+
+def clean_json_response(text):
+    """
+    Clean and fix malformed JSON responses from Gemini.
+    Handles unterminated strings, unescaped quotes, and other common issues.
+    """
+    if not text:
+        return None
+    
+    # Remove markdown code blocks if present
+    text = re.sub(r'```json\s*', '', text)
+    text = re.sub(r'```\s*', '', text)
+    text = text.strip()
+    
+    # Try to find JSON object boundaries
+    start_idx = text.find('{')
+    end_idx = text.rfind('}')
+    
+    if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+        text = text[start_idx:end_idx + 1]
+    elif start_idx != -1:
+        # If we have start but no end, try to find a reasonable end
+        # Look for the last closing brace or add one
+        text = text[start_idx:]
+        if not text.endswith('}'):
+            # Try to balance braces
+            open_count = text.count('{')
+            close_count = text.count('}')
+            if open_count > close_count:
+                text += '}' * (open_count - close_count)
+    
+    # Fix unterminated strings - more robust approach
+    # Process character by character to properly handle string boundaries
+    result = []
+    in_string = False
+    escape_next = False
+    i = 0
+    
+    while i < len(text):
+        char = text[i]
+        
+        if escape_next:
+            result.append(char)
+            escape_next = False
+            i += 1
+            continue
+        
+        if char == '\\':
+            result.append(char)
+            escape_next = True
+            i += 1
+            continue
+        
+        if char == '"':
+            result.append(char)
+            in_string = not in_string
+            i += 1
+            continue
+        
+        result.append(char)
+        i += 1
+    
+    # If we ended in a string, close it
+    if in_string:
+        result.append('"')
+    
+    text = ''.join(result)
+    
+    # Try to parse - if it fails, try more aggressive cleaning
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        # More aggressive cleaning: remove trailing incomplete parts
+        # Find the error position and truncate there
+        error_pos = getattr(e, 'pos', None)
+        if error_pos and error_pos < len(text):
+            # Try truncating at the error position and finding the last complete JSON object
+            truncated = text[:error_pos]
+            # Find the last complete key-value pair or object
+            last_comma = truncated.rfind(',')
+            last_colon = truncated.rfind(':')
+            
+            if last_comma > last_colon and last_comma > 0:
+                # Remove the incomplete part after last comma
+                truncated = truncated[:last_comma]
+                # Try to close the JSON properly
+                if truncated.count('{') > truncated.count('}'):
+                    truncated += '}'
+                try:
+                    return json.loads(truncated + '}')
+                except:
+                    pass
+        
+        # Last resort: try to extract JSON using regex
+        json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', text, re.DOTALL)
+        if json_match:
+            try:
+                cleaned = json_match.group(0)
+                # Ensure it's properly closed
+                if cleaned.count('{') > cleaned.count('}'):
+                    cleaned += '}' * (cleaned.count('{') - cleaned.count('}'))
+                return json.loads(cleaned)
+            except:
+                pass
+        
+        return None
+
+def safe_get_response_text(response):
+    """
+    Safely extract text from Gemini response, handling safety filters and errors.
+    """
+    try:
+        # Check if response has candidates
+        if not hasattr(response, 'candidates') or not response.candidates:
+            raise ValueError("No candidates in response")
+        
+        candidate = response.candidates[0]
+        
+        # Check finish reason (2 = SAFETY, 3 = RECITATION, etc.)
+        if hasattr(candidate, 'finish_reason'):
+            finish_reason = candidate.finish_reason
+            if finish_reason == 2:  # SAFETY
+                raise ValueError("Response was blocked by safety filters. Please try with different content.")
+            elif finish_reason == 3:  # RECITATION
+                raise ValueError("Response was blocked due to recitation policy.")
+            elif finish_reason != 1:  # 1 = STOP (normal)
+                raise ValueError(f"Response finished with reason: {finish_reason}")
+        
+        # Try to get text
+        if hasattr(response, 'text'):
+            return response.text
+        elif hasattr(candidate, 'content') and candidate.content:
+            if hasattr(candidate.content, 'parts'):
+                text_parts = [part.text for part in candidate.content.parts if hasattr(part, 'text')]
+                return ''.join(text_parts)
+        
+        raise ValueError("Could not extract text from response")
+        
+    except Exception as e:
+        raise ValueError(f"Error extracting response text: {str(e)}") 
 import urllib.request
 app = Flask(__name__)
 UPLOAD_FOLDER = 'uploads'
@@ -218,8 +359,21 @@ def analyze_vision_with_gemini(image_paths, scan_type, user_prompt="", language=
                 "response_mime_type": "application/json",
                 "max_output_tokens": 1500  # Limit for faster response
             },
-            request_options={"timeout": 60}  # 60 second timeout
+            request_options={"timeout": 120}  # Extended to 120 seconds for vision
         )
+        
+        # Verify response is valid
+        try:
+            response_text = safe_get_response_text(response)
+        except ValueError as e:
+            # Clean up and re-raise
+            for ref in uploaded_refs:
+                try:
+                    genai.delete_file(ref.name)
+                except:
+                    pass
+            raise ValueError(f"Vision analysis response error: {e}")
+            
     except Exception as e:
         # Clean up uploaded files on error
         for ref in uploaded_refs:
@@ -230,9 +384,27 @@ def analyze_vision_with_gemini(image_paths, scan_type, user_prompt="", language=
         raise  # Re-raise to be handled by caller
     
     for ref in uploaded_refs:
-        genai.delete_file(ref.name)
+        try:
+            genai.delete_file(ref.name)
+        except:
+            pass
 
-    return response.text.strip()
+    # Safely extract and clean response
+    try:
+        response_text = safe_get_response_text(response)
+        # Try to parse as JSON and re-stringify to ensure it's valid
+        try:
+            data = json.loads(response_text)
+            return json.dumps(data)  # Return clean JSON
+        except json.JSONDecodeError:
+            # If not JSON, try to clean it
+            cleaned = clean_json_response(response_text)
+            if cleaned:
+                return json.dumps(cleaned)
+            # Fallback: return cleaned text
+            return response_text.strip()
+    except ValueError as e:
+        raise ValueError(f"Vision analysis failed: {e}")
 
 
 @app.route('/save_patient_data', methods=['POST'])
@@ -448,7 +620,15 @@ def analyze_form_voice(audio_path, text_input, mode, doc_path=None, language='en
                 request_options={"timeout": 60}  # Extended timeout
             )
             
-            transcribed_text = transcribe_res.text.strip()
+            # Safely extract text with error handling
+            try:
+                transcribed_text = safe_get_response_text(transcribe_res).strip()
+            except ValueError as e:
+                print(f"⚠️ [FORM] Transcription blocked or failed: {e}")
+                # Continue without transcription if it fails
+                transcribed_text = ""
+                if "safety" in str(e).lower() or "blocked" in str(e).lower():
+                    print(f"⚠️ [FORM] Audio may contain content that triggered safety filters. Skipping transcription.")
             final_text_input += f" {transcribed_text}"
             transcribe_elapsed = time.time() - upload_start
             print(f"✅ [FORM] Transcription complete in {transcribe_elapsed:.1f}s: '{transcribed_text[:50]}...'")
@@ -517,18 +697,30 @@ JSON:
         )
         analysis_elapsed = time.time() - analysis_start
         print(f"✅ [FORM] Form analysis complete in {analysis_elapsed:.1f}s")
-        data = json.loads(response.text)
+        
+        # Safely extract and parse response
+        try:
+            response_text = safe_get_response_text(response)
+            data = json.loads(response_text)
+        except json.JSONDecodeError as e:
+            print(f"⚠️ [FORM] JSON parse error, attempting to clean: {e}")
+            data = clean_json_response(response_text)
+            if data is None:
+                raise ValueError(f"Could not parse form analysis JSON: {e}")
+        except ValueError as e:
+            raise ValueError(f"Form analysis response error: {e}")
         if "visual_fields" not in data: data["visual_fields"] = []
         if "checkbox_fields" not in data: data["checkbox_fields"] = []
     except Exception as e:
-        print(f"AI/JSON Error: {e}")
+        print(f"❌ [FORM] AI/JSON Error: {e}")
+        traceback.print_exc()
         # Clean up files on error
         for f in files_to_send:
             try:
                 genai.delete_file(f.name)
             except:
                 pass
-        return json.dumps({"visual_fields": [], "confirmation_message": "Error processing form logic."})
+        return json.dumps({"visual_fields": [], "confirmation_message": f"Error processing form logic: {str(e)[:100]}"})
 
     # --- STEP 4: TYPESETTER ENGINE ---
     if doc_path:
@@ -701,6 +893,11 @@ def analyze_medicine():
             os.remove(filepath)
 @app.route('/analyze_vision', methods=['POST'])
 def analyze_vision():
+    request_start = time.time()
+    print(f"\n{'='*60}")
+    print(f"🖼️ [VISION] New vision analysis request")
+    print(f"{'='*60}")
+    
     lang = request.form.get('language', 'en')
     files = request.files.getlist('images') or ([request.files['image']] if 'image' in request.files else [])
     
@@ -711,7 +908,35 @@ def analyze_vision():
 
     try:
         res_str = analyze_vision_with_gemini(paths, request.form.get('scan_type'), request.form.get('user_prompt'), 'en')
-        return jsonify(amazon_translate_dict(json.loads(res_str), lang))
+        result = json.loads(res_str)
+        
+        total_time = time.time() - request_start
+        print(f"✅ [VISION] Request completed in {total_time:.1f}s")
+        print(f"{'='*60}\n")
+        
+        return jsonify(amazon_translate_dict(result, lang))
+    except ValueError as e:
+        error_msg = str(e)
+        print(f"❌ [VISION] Error: {error_msg}")
+        total_time = time.time() - request_start
+        print(f"❌ [VISION] Request failed after {total_time:.1f}s")
+        print(f"{'='*60}\n")
+        
+        if "safety" in error_msg.lower() or "blocked" in error_msg.lower():
+            return jsonify({
+                "error": "Content was blocked by safety filters",
+                "answer_to_user": "The image content triggered safety filters. Please try with a different image.",
+                "recommendation": "Use a different image or ensure the image is appropriate for medical analysis."
+            }), 200
+        
+        return jsonify({"error": error_msg}), 500
+    except Exception as e:
+        print(f"❌ [VISION] Error: {e}")
+        traceback.print_exc()
+        total_time = time.time() - request_start
+        print(f"❌ [VISION] Request failed after {total_time:.1f}s")
+        print(f"{'='*60}\n")
+        return jsonify({"error": str(e)}), 500
     finally:
         for p in paths: 
             if os.path.exists(p): os.remove(p)            
@@ -822,9 +1047,38 @@ def analyze_audio_with_gemini(audio_path, user_prompt, language='en'):
             except:
                 pass  # Ignore cleanup errors
         
-        # Process response
+        # Process response with robust JSON parsing
         print(f"📊 [AUDIO] Processing response...")
-        data = json.loads(response.text)
+        try:
+            response_text = safe_get_response_text(response)
+            print(f"📝 [AUDIO] Raw response length: {len(response_text)} chars")
+        except ValueError as e:
+            print(f"❌ [AUDIO] Response extraction error: {e}")
+            raise
+        
+        # Try to parse JSON with cleaning
+        data = None
+        try:
+            data = json.loads(response_text)
+        except json.JSONDecodeError as e:
+            print(f"⚠️ [AUDIO] JSON parse error, attempting to clean: {e}")
+            data = clean_json_response(response_text)
+            
+            if data is None:
+                # Last attempt: try to extract just the JSON part
+                print(f"⚠️ [AUDIO] Cleaning failed, attempting manual extraction...")
+                # Try to find and extract JSON object
+                json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+                if json_match:
+                    try:
+                        data = json.loads(json_match.group(0))
+                    except:
+                        pass
+                
+                if data is None:
+                    raise ValueError(f"Could not parse JSON from response. Error: {e}")
+        
+        print(f"✅ [AUDIO] JSON parsed successfully")
         
         # FIX: Handle case where Gemini returns a list instead of a dict
         if isinstance(data, list):
@@ -1008,24 +1262,62 @@ def analyze():
         print(f"{'='*60}\n")
         
         return jsonify(amazon_translate_dict(result, lang))
-    except json.JSONDecodeError as e:
-        print(f"❌ JSON Decode Error: {e}")
+    except ValueError as e:
+        error_msg = str(e)
+        print(f"❌ [REQUEST] Value Error: {error_msg}")
+        total_time = time.time() - request_start
+        print(f"❌ [REQUEST] Request failed after {total_time:.1f}s")
+        print(f"{'='*60}\n")
+        
+        # Handle safety filter errors
+        if "safety" in error_msg.lower() or "blocked" in error_msg.lower():
+            return jsonify({
+                "valid_audio": True,
+                "condition": "Content Filtered",
+                "disease_type": "Safety Filter",
+                "simple_explanation": "The audio content triggered safety filters. Please try with a different recording.",
+                "recommendation": "Record a new audio sample with clearer speech.",
+                "acoustic_analysis": "N/A",
+                "severity": "Unknown"
+            }), 200  # Return 200 so frontend can display the message
+        
         return jsonify({
-            "error": "Invalid response format",
             "valid_audio": True,
             "condition": "Processing Error",
-            "simple_explanation": "Could not parse the analysis result. Please try again.",
-            "recommendation": "Retry with a shorter audio clip."
+            "disease_type": "System Error",
+            "simple_explanation": f"Analysis failed: {error_msg[:100]}",
+            "recommendation": "Please try again with a shorter audio clip.",
+            "acoustic_analysis": "N/A",
+            "severity": "Unknown"
+        }), 500
+    except json.JSONDecodeError as e:
+        print(f"❌ [REQUEST] JSON Decode Error: {e}")
+        total_time = time.time() - request_start
+        print(f"❌ [REQUEST] Request failed after {total_time:.1f}s")
+        print(f"{'='*60}\n")
+        return jsonify({
+            "valid_audio": True,
+            "condition": "Processing Error",
+            "disease_type": "Format Error",
+            "simple_explanation": "Could not parse the analysis result. The response format was invalid.",
+            "recommendation": "Retry with a shorter audio clip or try again.",
+            "acoustic_analysis": "N/A",
+            "severity": "Unknown"
         }), 500
     except Exception as e:
-        print(f"❌ Analyze Route Error: {e}")
+        print(f"❌ [REQUEST] Analyze Route Error: {e}")
         traceback.print_exc()
+        total_time = time.time() - request_start
+        print(f"❌ [REQUEST] Request failed after {total_time:.1f}s")
+        print(f"{'='*60}\n")
         return jsonify({
-            "error": str(e),
             "valid_audio": True,
             "condition": "System Error",
-            "simple_explanation": "An error occurred during analysis. Please try again.",
-            "recommendation": "Check your connection and retry."
+            "disease_type": "Error",
+            "simple_explanation": f"An error occurred during analysis: {str(e)[:100]}",
+            "recommendation": "Check your connection and retry.",
+            "acoustic_analysis": "N/A",
+            "severity": "Unknown"
         }), 500
     finally:
         if os.path.exists(filepath): 
