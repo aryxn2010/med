@@ -1066,6 +1066,8 @@ Analyze the audio and return structured JSON analysis only in {target_lang}."""
         # Retry logic with longer timeouts
         response = None
         response_text = None
+        safety_blocked = False
+        
         for attempt in range(max_retries):
             try:
                 attempt_start = time.time()
@@ -1092,6 +1094,7 @@ Analyze the audio and return structured JSON analysis only in {target_lang}."""
                     response_text = safe_get_response_text(response)
                     if response_text:
                         # Success - break out of retry loop
+                        safety_blocked = False
                         break
                     else:
                         raise ValueError("Empty response from API")
@@ -1100,6 +1103,7 @@ Analyze the audio and return structured JSON analysis only in {target_lang}."""
                     error_msg = str(ve).lower()
                     if "safety" in error_msg or "blocked" in error_msg or "recitation" in error_msg:
                         print(f"🚫 [AUDIO] Content blocked by safety filters on attempt {attempt + 1}")
+                        safety_blocked = True
                         
                         # Fallback: Try pro model if flash was blocked and we haven't tried pro yet
                         if not use_pro_model and attempt == 0:
@@ -1114,31 +1118,52 @@ Analyze the audio and return structured JSON analysis only in {target_lang}."""
                             # Reset attempt counter to retry with pro model
                             continue  # Retry with pro model
                         else:
-                            # Both models blocked - try to return a default response instead of failing
-                            print(f"⚠️ [AUDIO] Both models blocked. Returning default analysis response...")
-                            # Return a safe default response
-                            default_response = {
-                                "valid_audio": True,
-                                "universal_match": {"disease_name": "Unable to Analyze", "similarity_score": 0},
-                                "severity": "Unknown",
-                                "infection_type": "Analysis Blocked",
-                                "simple_explanation": "The audio analysis was blocked by content filters. This may occur with unclear audio, background noise, or other factors. Please try recording again in a quiet environment with clear speech.",
-                                "audio_characteristics": "Analysis unavailable due to content filtering.",
-                                "recommendation": "Please record a new audio sample in a quiet environment. Ensure the recording is clear and contains only the respiratory sounds you want analyzed."
-                            }
-                            return json.dumps(default_response)
+                            # Both models blocked - will return default after loop
+                            break
                     else:
                         raise
+                
+            except ValueError as ve:
+                # Handle ValueError separately (safety filters)
+                error_str = str(ve).lower()
+                if "safety" in error_str or "blocked" in error_str or "recitation" in error_str:
+                    print(f"🚫 [AUDIO] Safety filter ValueError on attempt {attempt + 1}")
+                    safety_blocked = True
+                    # Fallback: Try pro model if flash was blocked
+                    if not use_pro_model and attempt == 0:
+                        print(f"🔄 [AUDIO] Switching to gemini-3-pro-preview as fallback...")
+                        use_pro_model = True
+                        model = genai.GenerativeModel(
+                            model_name=MODEL_NAME,
+                            system_instruction=SYSTEM_INSTRUCTION,
+                            safety_settings=safety_config
+                        )
+                        continue
+                    else:
+                        break  # Exit loop to return default
+                else:
+                    raise  # Re-raise other ValueErrors
                 
             except Exception as e:
                 error_str = str(e).lower()
                 attempt_elapsed = time.time() - attempt_start
                 
-                # Check if it's a safety filter error - don't retry
+                # Check if it's a safety filter error
                 if "safety" in error_str or "blocked" in error_str or "recitation" in error_str or "finish_reason" in error_str:
                     print(f"🚫 [AUDIO] Safety filter triggered on attempt {attempt + 1}")
-                    # Re-raise immediately - don't retry safety filters
-                    raise ValueError("Response was blocked by safety filters. Please try with a different audio recording.")
+                    safety_blocked = True
+                    # Fallback: Try pro model if flash was blocked
+                    if not use_pro_model and attempt == 0:
+                        print(f"🔄 [AUDIO] Switching to gemini-3-pro-preview as fallback...")
+                        use_pro_model = True
+                        model = genai.GenerativeModel(
+                            model_name=MODEL_NAME,
+                            system_instruction=SYSTEM_INSTRUCTION,
+                            safety_settings=safety_config
+                        )
+                        continue
+                    else:
+                        break  # Exit loop to return default
                 
                 # Check if it's a timeout/deadline error
                 if "deadline" in error_str or "timeout" in error_str or "504" in error_str:
@@ -1156,6 +1181,29 @@ Analyze the audio and return structured JSON analysis only in {target_lang}."""
                     # Non-timeout error - log and re-raise
                     print(f"❌ [AUDIO] Error on attempt {attempt + 1}: {str(e)}")
                     raise
+        
+        # Check if we need to return default response due to safety filters
+        if safety_blocked and not response_text:
+            print(f"⚠️ [AUDIO] All attempts blocked by safety filters. Returning default analysis response...")
+            # Clean up before returning
+            if audio_file:
+                try:
+                    genai.delete_file(audio_file.name)
+                except:
+                    pass
+            # Return a safe default response
+            default_response = {
+                "valid_audio": True,
+                "universal_match": {"disease_name": "Unable to Analyze", "similarity_score": 0},
+                "severity": "Unknown",
+                "infection_type": "Analysis Blocked",
+                "simple_explanation": "The audio analysis was blocked by content filters. This may occur with unclear audio, background noise, or other factors. Please try recording again in a quiet environment with clear speech.",
+                "audio_characteristics": "Analysis unavailable due to content filtering.",
+                "recommendation": "Please record a new audio sample in a quiet environment. Ensure the recording is clear and contains only the respiratory sounds you want analyzed."
+            }
+            total_elapsed = time.time() - start_time
+            print(f"✅ [AUDIO] Default response returned after {total_elapsed:.1f}s")
+            return json.dumps(default_response)
         
         # Verify we have a valid response and response text
         if not response or not response_text:
