@@ -415,33 +415,43 @@ def analyze_form_voice(audio_path, text_input, mode, doc_path=None, language='en
     target_lang = lang_map.get(language, "English")
 
     # --- STEP 1: TRANSCRIBE AUDIO (OPTIMIZED) ---
+    print(f"🎤 [FORM] Starting form voice processing...")
+    form_start = time.time()
     final_text_input = text_input or ""
     audio_file = None
     
     if audio_path:
         try:
-            # Upload audio file with faster checking
+            print(f"📤 [FORM] Uploading audio for transcription...")
+            # Upload audio file with extended timeout
             audio_file = genai.upload_file(path=audio_path)
-            upload_timeout = 25  # Reduced timeout
+            upload_timeout = 60  # Extended timeout
             upload_start = time.time()
             
             while audio_file.state.name == "PROCESSING":
-                if time.time() - upload_start > upload_timeout:
-                    raise TimeoutError("Audio upload timeout")
-                time.sleep(0.3)  # Faster checking interval
+                elapsed = time.time() - upload_start
+                if elapsed > upload_timeout:
+                    raise TimeoutError(f"Audio upload timeout after {elapsed:.1f}s")
+                time.sleep(0.5)  # Check every 0.5s
                 audio_file = genai.get_file(audio_file.name)
+            
+            upload_elapsed = time.time() - upload_start
+            print(f"✅ [FORM] Audio uploaded in {upload_elapsed:.1f}s")
             
             # Use faster flash model for transcription
             transcribe_model = genai.GenerativeModel("gemini-3-flash-preview")
             
+            print(f"🎙️ [FORM] Transcribing audio...")
             transcribe_res = transcribe_model.generate_content(
                 [audio_file, f"Transcribe this audio exactly into {target_lang}. Return ONLY the text."],
                 generation_config={"max_output_tokens": 500},  # Limit tokens for speed
-                request_options={"timeout": 30}  # Reduced timeout
+                request_options={"timeout": 60}  # Extended timeout
             )
             
             transcribed_text = transcribe_res.text.strip()
             final_text_input += f" {transcribed_text}"
+            transcribe_elapsed = time.time() - upload_start
+            print(f"✅ [FORM] Transcription complete in {transcribe_elapsed:.1f}s: '{transcribed_text[:50]}...'")
             
             # Clean up immediately after transcription
             if audio_file:
@@ -451,7 +461,7 @@ def analyze_form_voice(audio_path, text_input, mode, doc_path=None, language='en
                     pass
             
         except Exception as e:
-            print(f"Transcription Error: {e}")
+            print(f"❌ [FORM] Transcription Error: {e}")
             # Clean up on error
             if audio_file:
                 try:
@@ -490,19 +500,23 @@ JSON:
 }}"""
 
     # Use flash model for faster processing when no document, pro when document needs analysis
-    model_name = "gemini-3-flash-preview" if not doc_path else "gemini-3-pro-preview"
+    model_name = "gemini-3-flash-preview" if not doc_path else "gemini-3-flash-preview"  # Use flash for both - much faster
+    print(f"🤖 [FORM] Using {model_name} for form analysis...")
     model = genai.GenerativeModel(model_name=model_name)
     
     try:
+        analysis_start = time.time()
         response = model.generate_content(
             files_to_send + [EXTREME_PROMPT], 
             generation_config={
                 "response_mime_type": "application/json",
-                "max_output_tokens": 1500,  # Reduced for faster response
+                "max_output_tokens": 1200,  # Reduced for faster response
                 "temperature": 0.3  # Lower temperature for faster, more deterministic output
             },
-            request_options={"timeout": 45}  # Reduced timeout
+            request_options={"timeout": 120}  # Extended timeout: 2 minutes
         )
+        analysis_elapsed = time.time() - analysis_start
+        print(f"✅ [FORM] Form analysis complete in {analysis_elapsed:.1f}s")
         data = json.loads(response.text)
         if "visual_fields" not in data: data["visual_fields"] = []
         if "checkbox_fields" not in data: data["checkbox_fields"] = []
@@ -654,6 +668,10 @@ JSON:
         except:
             pass
     
+    total_form_time = time.time() - form_start
+    print(f"✅ [FORM] Total form processing time: {total_form_time:.1f}s")
+    print(f"{'='*60}\n")
+    
     return json.dumps(data)
 @app.route('/uploads/<filename>')
 def uploaded_file(filename):
@@ -703,43 +721,63 @@ def analyze_audio_with_gemini(audio_path, user_prompt, language='en'):
     target_lang = lang_map.get(language, "English")
 
     audio_file = None
-    max_retries = 3
-    retry_delay = 1
+    max_retries = 2  # Reduced retries but longer timeouts
+    retry_delay = 2
+    
+    print(f"🎵 [AUDIO] Starting analysis for {target_lang}...")
+    start_time = time.time()
     
     try:
-        # Upload audio file with timeout protection (optimized)
+        # Upload audio file with extended timeout
+        print(f"📤 [AUDIO] Uploading file: {audio_path}")
         audio_file = genai.upload_file(path=audio_path)
-        upload_timeout = 25  # Reduced timeout
+        upload_timeout = 60  # Extended to 60 seconds
         upload_start = time.time()
         
         while audio_file.state.name == "PROCESSING":
-            if time.time() - upload_start > upload_timeout:
-                raise TimeoutError("Audio upload timeout")
-            time.sleep(0.3)  # Faster checking interval (reduced from 0.5s)
+            elapsed = time.time() - upload_start
+            if elapsed > upload_timeout:
+                raise TimeoutError(f"Audio upload timeout after {elapsed:.1f}s")
+            if int(elapsed) % 5 == 0:  # Log every 5 seconds
+                print(f"⏳ [AUDIO] Upload in progress... {elapsed:.1f}s")
+            time.sleep(0.5)  # Check every 0.5s
             audio_file = genai.get_file(audio_file.name)
+        
+        upload_elapsed = time.time() - upload_start
+        print(f"✅ [AUDIO] Upload complete in {upload_elapsed:.1f}s")
 
+        # Use flash model for speed - it's still very accurate for audio analysis
+        # Flash is 3-5x faster than pro while maintaining high accuracy
+        print(f"🤖 [AUDIO] Using gemini-3-flash-preview for fast analysis...")
         model = genai.GenerativeModel(
-            model_name=MODEL_NAME,
+            model_name="gemini-3-flash-preview",  # Much faster, still accurate
             system_instruction=SYSTEM_INSTRUCTION
         )
         
-        # Optimized prompt - shorter for faster processing
-        prompt = f"Analyze audio. Context: {user_prompt}. Language: {target_lang}. Output JSON only, plain text values."
+        # Ultra-optimized prompt - minimal tokens
+        prompt = f"Analyze audio. Context: {user_prompt}. Lang: {target_lang}. JSON only."
 
-        # Retry logic with exponential backoff
+        # Retry logic with longer timeouts
         response = None
         for attempt in range(max_retries):
             try:
-                # Set explicit timeout (45 seconds per attempt - reduced for faster failure)
+                attempt_start = time.time()
+                print(f"🔄 [AUDIO] Attempt {attempt + 1}/{max_retries} - Starting analysis...")
+                
+                # Extended timeout: 180 seconds (3 minutes) per attempt
+                # Total possible: 180s * 2 attempts = 6 minutes max
                 response = model.generate_content(
                     [audio_file, prompt],
                     generation_config={
                         "response_mime_type": "application/json",
                         "temperature": 0.2,
-                        "max_output_tokens": 800  # Further reduced for faster response
+                        "max_output_tokens": 600  # Reduced further for speed
                     },
-                    request_options={"timeout": 45}  # Reduced timeout for faster retries
+                    request_options={"timeout": 180}  # 3 minutes per attempt
                 )
+                
+                attempt_elapsed = time.time() - attempt_start
+                print(f"✅ [AUDIO] Attempt {attempt + 1} completed in {attempt_elapsed:.1f}s")
                 
                 # Verify response is valid
                 if response and hasattr(response, 'text') and response.text:
@@ -750,33 +788,42 @@ def analyze_audio_with_gemini(audio_path, user_prompt, language='en'):
                 
             except Exception as e:
                 error_str = str(e).lower()
+                attempt_elapsed = time.time() - attempt_start
                 
                 # Check if it's a timeout/deadline error
                 if "deadline" in error_str or "timeout" in error_str or "504" in error_str:
+                    print(f"⏱️ [AUDIO] Timeout on attempt {attempt + 1} after {attempt_elapsed:.1f}s")
                     if attempt < max_retries - 1:
                         wait_time = retry_delay * (2 ** attempt)  # Exponential backoff
-                        print(f"⚠️ Timeout on attempt {attempt + 1}/{max_retries}. Retrying in {wait_time}s...")
+                        print(f"⏳ [AUDIO] Waiting {wait_time}s before retry...")
                         time.sleep(wait_time)
                         continue
                     else:
-                        # Last attempt failed - return error response
-                        raise TimeoutError(f"Audio analysis timed out after {max_retries} attempts")
+                        # Last attempt failed
+                        total_elapsed = time.time() - start_time
+                        raise TimeoutError(f"Audio analysis timed out after {max_retries} attempts ({total_elapsed:.1f}s total)")
                 else:
-                    # Non-timeout error - re-raise immediately
+                    # Non-timeout error - log and re-raise
+                    print(f"❌ [AUDIO] Error on attempt {attempt + 1}: {str(e)}")
                     raise
         
         # Verify we have a valid response
         if not response or not hasattr(response, 'text'):
             raise ValueError("No valid response received from API")
         
+        total_elapsed = time.time() - start_time
+        print(f"✅ [AUDIO] Analysis complete in {total_elapsed:.1f}s total")
+        
         # Clean up uploaded file
         if audio_file:
             try:
                 genai.delete_file(audio_file.name)
+                print(f"🗑️ [AUDIO] Cleaned up uploaded file")
             except:
                 pass  # Ignore cleanup errors
         
         # Process response
+        print(f"📊 [AUDIO] Processing response...")
         data = json.loads(response.text)
         
         # FIX: Handle case where Gemini returns a list instead of a dict
@@ -827,18 +874,27 @@ def analyze_audio_with_gemini(audio_path, user_prompt, language='en'):
         return json.dumps(formatted_output)
 
     except TimeoutError as e:
-        print(f"⏱️ Timeout Error: {e}")
+        total_elapsed = time.time() - start_time if 'start_time' in locals() else 0
+        print(f"⏱️ [AUDIO] Timeout Error after {total_elapsed:.1f}s: {e}")
+        # Clean up on timeout
+        if audio_file:
+            try:
+                genai.delete_file(audio_file.name)
+            except:
+                pass
         return json.dumps({
             "valid_audio": True,
             "condition": "Processing Timeout",
             "disease_type": "System Timeout",
-            "simple_explanation": "The analysis took too long. Please try with a shorter audio clip or check your connection.",
-            "recommendation": "Try recording a shorter audio sample (under 30 seconds).",
+            "simple_explanation": f"The analysis timed out after {total_elapsed:.0f} seconds. The audio file may be too long or the connection is slow.",
+            "recommendation": "Try recording a shorter audio sample (under 30 seconds) or check your internet connection.",
             "acoustic_analysis": "N/A",
             "severity": "Unknown"
         })
     except Exception as e:
-        print(f"❌ Logic Error: {e}")
+        total_elapsed = time.time() - start_time if 'start_time' in locals() else 0
+        print(f"❌ [AUDIO] Error after {total_elapsed:.1f}s: {e}")
+        traceback.print_exc()  # Full stack trace for debugging
         # Clean up on any error
         if audio_file:
             try:
@@ -849,8 +905,8 @@ def analyze_audio_with_gemini(audio_path, user_prompt, language='en'):
             "valid_audio": True,
             "condition": "Analysis Error",
             "disease_type": "System Error",
-            "simple_explanation": "Could not process audio data safely. Please try again.",
-            "recommendation": "Check internet connection and try again.",
+            "simple_explanation": f"Could not process audio data. Error: {str(e)[:100]}",
+            "recommendation": "Please try again with a shorter audio clip or check your connection.",
             "acoustic_analysis": "N/A",
             "severity": "Unknown"
         })    
@@ -917,12 +973,28 @@ def amazon_translate_dict(data, target_lang):
 
 @app.route('/analyze', methods=['POST'])
 def analyze():
+    request_start = time.time()
+    print(f"\n{'='*60}")
+    print(f"🎤 [REQUEST] New audio analysis request received")
+    print(f"{'='*60}")
+    
     if 'audio' not in request.files:
         return jsonify({"error": "No audio file"}), 400
     
     lang = request.form.get('language', 'en')
     file = request.files['audio']
-    filepath = os.path.join(UPLOAD_FOLDER, secure_filename(f"t_{int(time.time())}.wav"))
+    
+    # Get file size for logging
+    file.seek(0, 2)  # Seek to end
+    file_size = file.tell()
+    file.seek(0)  # Reset
+    
+    print(f"📁 [REQUEST] File size: {file_size / 1024:.1f} KB")
+    print(f"🌐 [REQUEST] Language: {lang}")
+    
+    # Support both webm and wav
+    ext = 'webm' if file.filename and 'webm' in file.filename.lower() else 'wav'
+    filepath = os.path.join(UPLOAD_FOLDER, secure_filename(f"t_{int(time.time())}.{ext}"))
     file.save(filepath)
 
     try:
@@ -930,6 +1002,11 @@ def analyze():
         res_str = analyze_audio_with_gemini(filepath, request.form.get('user_prompt', ''), 'en')
         # 2. Translate everything via Amazon
         result = json.loads(res_str)
+        
+        total_time = time.time() - request_start
+        print(f"✅ [REQUEST] Request completed in {total_time:.1f}s")
+        print(f"{'='*60}\n")
+        
         return jsonify(amazon_translate_dict(result, lang))
     except json.JSONDecodeError as e:
         print(f"❌ JSON Decode Error: {e}")

@@ -2159,11 +2159,20 @@ async function processTextOnly() {
                 if (event.data.size > 0) audioChunks.push(event.data);
             };
             
+            let recordingStartTime = Date.now();
+            let maxRecordingDuration = 60000; // 60 seconds max
+            
             mediaRecorder.onstop = () => {
                 // STOP Wave, Show Processing Text
                 stopScrollingWave('clinical-wave');
                 liveText.style.display = 'block'; // Bring text back
-                liveText.innerHTML = "<i class='fas fa-cog fa-spin'></i> Processing...";
+                
+                const duration = Date.now() - recordingStartTime;
+                if (duration > maxRecordingDuration) {
+                    liveText.innerHTML = "<i class='fas fa-exclamation-triangle'></i> Long recording - processing may take longer...";
+                } else {
+                    liveText.innerHTML = "<i class='fas fa-cog fa-spin'></i> Processing...";
+                }
                 
                 // Use webm for faster upload and processing
                 const audioBlob = new Blob(audioChunks, { type: options.mimeType || 'audio/webm' });
@@ -3362,9 +3371,28 @@ async function toggleRecording() {
                 if (event.data.size > 0) audioChunks.push(event.data);
             };
             
+            let recordingStartTime = Date.now();
+            let maxRecordingDuration = 60000; // 60 seconds max
+            
+            // Auto-stop timer
+            const autoStopTimer = setTimeout(() => {
+                if (mediaRecorder && mediaRecorder.state === 'recording') {
+                    mediaRecorder.stop();
+                    alert("Recording stopped automatically at 60 seconds for optimal processing speed.");
+                }
+            }, maxRecordingDuration);
+            
             mediaRecorder.onstop = () => {
+                clearTimeout(autoStopTimer); // Clear timer if stopped manually
                 stopScrollingWave('bio-visualizer'); 
                 viz.style.display = 'none'; // Hide visualizer on stop
+
+                const duration = Date.now() - recordingStartTime;
+                
+                // Warn if recording is too long
+                if (duration > maxRecordingDuration) {
+                    alert(`Recording is ${(duration/1000).toFixed(1)}s. For best results, keep recordings under 60 seconds.`);
+                }
 
                 // STORE BLOB, DO NOT SEND YET - Use webm for faster processing
                 storedAudioData = new Blob(audioChunks, { type: options.mimeType || 'audio/webm' });
@@ -3372,7 +3400,7 @@ async function toggleRecording() {
                 // UI: Reset Button
                 btn.classList.remove('recording');
                 icon.className = "fas fa-check";
-                text.innerText = "Audio Captured";
+                text.innerText = `Audio Captured (${(duration/1000).toFixed(1)}s)`;
                 
                 // ENABLE NEXT STEP
                 enableContextStep();
