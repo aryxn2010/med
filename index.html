@@ -2227,94 +2227,129 @@ let scrollContext, scrollAnalyser, scrollSource;
 
 function startScrollingWave(stream, containerId) {
     const container = document.getElementById(containerId);
-    if (!container) return;
+    if (!container) {
+        console.error("Container not found:", containerId);
+        return;
+    }
+    
+    console.log("Starting waveform visualization for:", containerId);
     
     // Clean up previous visualization
-    if (scrollInterval) clearInterval(scrollInterval);
+    if (scrollInterval) {
+        clearInterval(scrollInterval);
+        scrollInterval = null;
+    }
     if (scrollSource) {
-        try { scrollSource.disconnect(); } catch(e) {}
+        try { 
+            scrollSource.disconnect(); 
+            scrollSource = null;
+        } catch(e) {
+            console.log("Source already disconnected");
+        }
     }
     
     container.innerHTML = ""; 
     container.className = "scrolling-wave"; 
     container.style.display = "flex";
 
-    // Create or resume AudioContext
-    if (!scrollContext) {
+    // Create new AudioContext for each visualization to avoid conflicts
+    try {
         scrollContext = new (window.AudioContext || window.webkitAudioContext)();
+        console.log("AudioContext created, state:", scrollContext.state);
+    } catch(e) {
+        console.error("Failed to create AudioContext:", e);
+        return;
     }
     
     // Resume AudioContext if suspended (required by browsers)
     if (scrollContext.state === 'suspended') {
-        scrollContext.resume();
+        scrollContext.resume().then(() => {
+            console.log("AudioContext resumed");
+            setupVisualization();
+        }).catch(err => {
+            console.error("Failed to resume AudioContext:", err);
+        });
+    } else {
+        setupVisualization();
     }
     
-    // Create new analyser with better settings for voice
-    scrollAnalyser = scrollContext.createAnalyser();
-    scrollAnalyser.fftSize = 256; // Increased for better resolution
-    scrollAnalyser.smoothingTimeConstant = 0.3; // Reduced for more responsive visualization
-    
-    // Create new source and connect
-    scrollSource = scrollContext.createMediaStreamSource(stream);
-    scrollSource.connect(scrollAnalyser);
-    
-    // Use time-domain data for actual waveform (better for voice sync)
-    const timeDataArray = new Uint8Array(scrollAnalyser.fftSize);
-    const freqDataArray = new Uint8Array(scrollAnalyser.frequencyBinCount);
+    function setupVisualization() {
+        try {
+            // Create new analyser with better settings for voice
+            scrollAnalyser = scrollContext.createAnalyser();
+            scrollAnalyser.fftSize = 256; // Increased for better resolution
+            scrollAnalyser.smoothingTimeConstant = 0.1; // Very low for immediate response
+            
+            // Create new source and connect
+            scrollSource = scrollContext.createMediaStreamSource(stream);
+            scrollSource.connect(scrollAnalyser);
+            console.log("Audio source connected to analyser");
+            
+            // Use time-domain data for actual waveform (better for voice sync)
+            const timeDataArray = new Uint8Array(scrollAnalyser.fftSize);
+            const freqDataArray = new Uint8Array(scrollAnalyser.frequencyBinCount);
 
-    scrollInterval = setInterval(() => {
-        // Get both time-domain (waveform) and frequency data
-        scrollAnalyser.getByteTimeDomainData(timeDataArray);
-        scrollAnalyser.getByteFrequencyData(freqDataArray);
-        
-        // Calculate volume from time-domain data (actual waveform amplitude)
-        let sum = 0;
-        let max = 0;
-        for(let i = 0; i < timeDataArray.length; i++) {
-            const value = Math.abs(timeDataArray[i] - 128); // Center around 0
-            sum += value;
-            if (value > max) max = value;
+            scrollInterval = setInterval(() => {
+                try {
+                    // Get both time-domain (waveform) and frequency data
+                    scrollAnalyser.getByteTimeDomainData(timeDataArray);
+                    scrollAnalyser.getByteFrequencyData(freqDataArray);
+                    
+                    // Calculate volume from time-domain data (actual waveform amplitude)
+                    let sum = 0;
+                    let max = 0;
+                    for(let i = 0; i < timeDataArray.length; i++) {
+                        const value = Math.abs(timeDataArray[i] - 128); // Center around 0
+                        sum += value;
+                        if (value > max) max = value;
+                    }
+                    
+                    // Use RMS (Root Mean Square) for better volume representation
+                    const rms = Math.sqrt(sum / timeDataArray.length);
+                    const normalizedVolume = Math.min(1, (rms / 128) * 2); // Normalize to 0-1
+                    
+                    // Also get frequency data for voice range (300-3400 Hz roughly)
+                    let voiceSum = 0;
+                    for(let i = 2; i < 30; i++) {
+                        voiceSum += freqDataArray[i];
+                    }
+                    const voiceLevel = voiceSum / 28;
+                    
+                    // Combine time-domain (volume) and frequency (voice presence) for better visualization
+                    const combinedLevel = (normalizedVolume * 0.7) + ((voiceLevel / 255) * 0.3);
+                    
+                    // Calculate bar height with better sensitivity - more responsive
+                    let baseHeight = 4; // Minimum height
+                    if (combinedLevel > 0.02) { // Lower threshold for more sensitivity
+                        baseHeight = 4 + (combinedLevel * 56); // Scale to 4-60px range
+                    }
+                    
+                    // Add slight variation for natural look
+                    const variation = 0.85 + (combinedLevel * 0.3); // More variation based on actual data
+                    let finalHeight = Math.min(60, Math.max(4, baseHeight * variation));
+
+                    const bar = document.createElement('div');
+                    bar.classList.add('wave-bar-scroll');
+                    bar.style.height = `${finalHeight}px`;
+                    bar.style.opacity = combinedLevel > 0.05 ? 1 : 0.3; // More visible even when quiet
+
+                    container.appendChild(bar);
+
+                    // Calculate limit dynamically based on CURRENT width (12px = bar width + gap)
+                    const currentMaxBars = Math.floor(container.clientWidth / 12) + 2;
+
+                    // Only remove bars if we exceed the CURRENT visual limit
+                    while (container.children.length > currentMaxBars) {
+                        container.removeChild(container.firstChild);
+                    }
+                } catch(e) {
+                    console.error("Error in waveform interval:", e);
+                }
+            }, 25); // Faster update for smoother animation (25ms = ~40fps)
+        } catch(e) {
+            console.error("Error setting up visualization:", e);
         }
-        
-        // Use RMS (Root Mean Square) for better volume representation
-        const rms = Math.sqrt(sum / timeDataArray.length);
-        const normalizedVolume = Math.min(1, (rms / 128) * 2); // Normalize to 0-1
-        
-        // Also get frequency data for voice range (300-3400 Hz roughly)
-        let voiceSum = 0;
-        for(let i = 2; i < 30; i++) {
-            voiceSum += freqDataArray[i];
-        }
-        const voiceLevel = voiceSum / 28;
-        
-        // Combine time-domain (volume) and frequency (voice presence) for better visualization
-        const combinedLevel = (normalizedVolume * 0.7) + ((voiceLevel / 255) * 0.3);
-        
-        // Calculate bar height with better sensitivity
-        let baseHeight = 4; // Minimum height
-        if (combinedLevel > 0.05) { // Only show bars when there's actual sound
-            baseHeight = 4 + (combinedLevel * 56); // Scale to 4-60px range
-        }
-        
-        // Add slight variation for natural look (but less random, more based on actual data)
-        const variation = 0.9 + (combinedLevel * 0.2); // Less random, more data-driven
-        let finalHeight = Math.min(60, Math.max(4, baseHeight * variation));
-
-        const bar = document.createElement('div');
-        bar.classList.add('wave-bar-scroll');
-        bar.style.height = `${finalHeight}px`;
-        bar.style.opacity = combinedLevel > 0.1 ? 1 : 0.4; // Fade when quiet
-
-        container.appendChild(bar);
-
-        // Calculate limit dynamically based on CURRENT width (12px = bar width + gap)
-        const currentMaxBars = Math.floor(container.clientWidth / 12) + 2;
-
-        // Only remove bars if we exceed the CURRENT visual limit
-        while (container.children.length > currentMaxBars) {
-            container.removeChild(container.firstChild);
-        }
-    }, 30); // Reduced interval for smoother animation (30ms = ~33fps)
+    }
 }
 function stopScrollingWave(containerId) {
     if (scrollInterval) {

@@ -447,20 +447,66 @@ def analyze_form_voice(audio_path, text_input, mode, doc_path=None, language='en
                 print(f"Audio upload failed or timed out: {audio_file.state.name}")
                 raise Exception("Audio upload failed")
             
-            transcribe_model = genai.GenerativeModel("gemini-2.0-flash-exp")  # Faster model
+            # Use a more reliable model for transcription
+            transcribe_model = genai.GenerativeModel("gemini-1.5-flash")  # More reliable for transcription
             
+            # Improved transcription prompt - more direct
+            transcribe_prompt = f"""You are a speech-to-text transcription system. Listen to this audio and write down EXACTLY what the person says.
+
+IMPORTANT:
+- Write down every single word you hear
+- Include all names, numbers, dates, addresses
+- Keep the exact words and phrases
+- Do NOT add punctuation unless you hear pauses
+- Do NOT summarize or interpret
+- If you hear "Name is John Smith", write "Name is John Smith"
+- If you hear "Age is 25 years", write "Age is 25 years"
+- If you hear "Date is January 27", write "Date is January 27"
+
+Output ONLY the transcribed text in {target_lang}. No explanations, no quotes, just the words:"""
+            
+            print(f"Starting transcription with audio file: {audio_file.name}")
             transcribe_res = transcribe_model.generate_content(
-                [audio_file, f"Transcribe this audio exactly into {target_lang}. Return ONLY the text."],
-                generation_config={"temperature": 0.1, "max_output_tokens": 500}  # Faster, shorter response
+                [audio_file, transcribe_prompt],
+                generation_config={
+                    "temperature": 0.1,  # Lower temperature for more accurate transcription
+                    "max_output_tokens": 2000,  # Increased for longer speech
+                    "top_p": 0.95,
+                    "top_k": 40
+                }
             )
+            print(f"Transcription response received, checking candidates...")
             
             # Fix: Check if response has valid parts before accessing .text
             if transcribe_res.candidates and len(transcribe_res.candidates) > 0:
                 candidate = transcribe_res.candidates[0]
                 if candidate.content and candidate.content.parts:
                     transcribed_text = candidate.content.parts[0].text.strip()
-                    final_text_input += f" {transcribed_text}"
-                    print(f"Transcribed text: '{transcribed_text}'")
+                    
+                    # Validate transcription - reject if it's just punctuation or too short
+                    if transcribed_text and len(transcribed_text) > 1 and transcribed_text not in [".", ",", "!", "?", "...", "no speech detected", "No speech detected", "No speech", "no speech"]:
+                        final_text_input += f" {transcribed_text}"
+                        print(f"✓ Transcribed text: '{transcribed_text}'")
+                    else:
+                        print(f"✗ Transcription appears invalid or empty: '{transcribed_text}'")
+                        if not final_text_input.strip():
+                            print("WARNING: No valid transcription and no text input provided!")
+                            # Try alternative transcription method
+                            try:
+                                print("Attempting alternative transcription...")
+                                alt_transcribe = transcribe_model.generate_content(
+                                    [audio_file, "What did the person say in this audio? Transcribe every word exactly."],
+                                    generation_config={"temperature": 0.3, "max_output_tokens": 1000}
+                                )
+                                if alt_transcribe.candidates and len(alt_transcribe.candidates) > 0:
+                                    alt_candidate = alt_transcribe.candidates[0]
+                                    if alt_candidate.content and alt_candidate.content.parts:
+                                        alt_text = alt_candidate.content.parts[0].text.strip()
+                                        if alt_text and len(alt_text) > 1 and alt_text not in [".", ",", "!", "?", "..."]:
+                                            final_text_input = alt_text
+                                            print(f"✓ Alternative transcription successful: '{alt_text}'")
+                            except Exception as alt_e:
+                                print(f"Alternative transcription also failed: {alt_e}")
                 else:
                     print("Transcription Error: Response has no valid parts")
             else:
@@ -491,27 +537,54 @@ def analyze_form_voice(audio_path, text_input, mode, doc_path=None, language='en
         print(f"Document uploaded successfully")
     
     print(f"Final text input for AI: '{final_text_input}'")
+    
+    # Validate that we have meaningful input
+    if not final_text_input or len(final_text_input.strip()) < 3:
+        print("WARNING: Final text input is too short or empty. This may result in no fields being extracted.")
+        if doc_path:
+            return json.dumps({
+                "visual_fields": [], 
+                "checkbox_fields": [],
+                "confirmation_message": "Error: No valid speech or text input detected. Please speak clearly or type your instructions."
+            })
 
     # --- STEP 3: LOGIC & ALIGNMENT ---
-    # Optimized shorter prompt for faster processing
-    EXTREME_PROMPT = f"""Analyze the document image and extract form fields from user instructions: "{final_text_input}"
+    # Enhanced prompt for better field extraction - more aggressive extraction
+    EXTREME_PROMPT = f"""You are an expert document form filler. Your job is to fill out the form in the image based on what the user said.
 
-TASK: Match user data to form fields. Extract field names and values from: "{final_text_input}"
+USER SAID: "{final_text_input}"
 
-RULES:
-- Only fill fields mentioned in user instructions
+STEP 1: Look at the document image. Identify every form field you see (Name, Age, Date, Address, Phone, Email, etc. and any checkboxes).
+
+STEP 2: Analyze what the user said: "{final_text_input}"
+- Extract ANY names, numbers, dates, addresses, or other information mentioned
+- Even if the transcription is short, try to extract what you can
+- Look for common patterns: "Name is X", "Age is X", "Date is X", "Address is X"
+- If user says just "John" or "John Smith", assume it's for the Name field
+- If user says "25" or "25 years", assume it's for Age field
+- Be smart about matching partial information to form fields
+
+STEP 3: For each piece of information you extracted:
+- Find the matching field on the form
+- Create a bounding box (value_rect) for where to write the text
+- The bounding box should cover the blank space AFTER the field label
+
+CRITICAL:
+- Extract EVERYTHING the user mentioned, even if it seems incomplete
+- If user said "John", fill the Name field with "John"
+- If user said "25", fill the Age field with "25"
+- Be proactive - match partial information to likely fields
 - Value must be in {target_lang} language
-- Start bounding box (xmin) AFTER label text ends, leave 4 letter spaces gap
-- value_rect format: [ymin, xmin, ymax, xmax] covering blank writing space only
+- value_rect format: [ymin, xmin, ymax, xmax] - start xmin AFTER the label, leave 4 spaces gap
 - Never use "none", "None", "N/A", or empty values
 
 OUTPUT JSON:
 {{
-  "visual_fields": [{{"key": "Field Name", "value": "Value from Instructions", "value_rect": [ymin, xmin, ymax, xmax]}}],
+  "visual_fields": [{{"key": "Field Name", "value": "Extracted Value", "value_rect": [ymin, xmin, ymax, xmax]}}],
   "checkbox_fields": [{{"key": "Checkbox Label", "value_rect": [ymin, xmin, ymax, xmax]}}]
 }}
 
-Extract ALL mentioned fields. Return empty arrays if none mentioned."""
+IMPORTANT: Extract as much as possible from "{final_text_input}". Even single words or numbers should be matched to appropriate form fields."""
 
     # Use faster model for document analysis
     model = genai.GenerativeModel(model_name="gemini-2.0-flash-exp")  # Faster than pro
@@ -956,19 +1029,49 @@ def process_form_voice():
     lang = request.form.get('language', 'en')
     audio = request.files.get('audio')
     doc = request.files.get('form_doc')
+    text_input = request.form.get('text_input', '')
     
-    a_path = os.path.join(UPLOAD_FOLDER, "v.wav") if audio else None
-    if a_path and audio: 
-        audio.save(a_path)
+    a_path = None
+    if audio:
+        a_path = os.path.join(UPLOAD_FOLDER, f"v_{int(time.time())}.wav")  # Unique filename
+        try:
+            audio.save(a_path)
+            # Validate audio file exists and has content
+            if os.path.exists(a_path):
+                file_size = os.path.getsize(a_path)
+                print(f"Audio file saved: {a_path}, size: {file_size} bytes")
+                if file_size < 1000:  # Less than 1KB is likely invalid
+                    print(f"WARNING: Audio file is very small ({file_size} bytes), may be corrupted or empty")
+            else:
+                print("ERROR: Audio file was not saved properly")
+                a_path = None
+        except Exception as e:
+            print(f"Error saving audio file: {e}")
+            a_path = None
     
     d_path = None
     if doc and doc.filename:
         d_path = os.path.join(UPLOAD_FOLDER, secure_filename(doc.filename))
-        doc.save(d_path)
+        try:
+            doc.save(d_path)
+            print(f"Document saved: {d_path}")
+        except Exception as e:
+            print(f"Error saving document: {e}")
+            d_path = None
 
     try:
-        res_str = analyze_form_voice(a_path, request.form.get('text_input'), request.form.get('mode'), d_path, lang)
+        print(f"Processing with audio: {a_path is not None}, text_input: '{text_input}', doc: {d_path is not None}")
+        res_str = analyze_form_voice(a_path, text_input, request.form.get('mode'), d_path, lang)
         return jsonify(amazon_translate_dict(json.loads(res_str), lang))
+    except Exception as e:
+        print(f"Error in process_form_voice: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "visual_fields": [],
+            "checkbox_fields": [],
+            "confirmation_message": f"Error processing request: {str(e)}"
+        }), 500
     finally:
         if a_path and os.path.exists(a_path): 
             os.remove(a_path)
