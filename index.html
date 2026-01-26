@@ -2221,7 +2221,7 @@ function showToast(message, isError = false) {
 
     setTimeout(function(){ x.className = x.className.replace("show", ""); }, 3000);
 }
-// --- UPDATED SCROLLING WAVE VISUALIZER (Fixes PC Width Issue) ---
+// --- UPDATED SCROLLING WAVE VISUALIZER (Fixed Voice Synchronization) ---
 let scrollInterval;
 let scrollContext, scrollAnalyser, scrollSource;
 
@@ -2229,55 +2229,109 @@ function startScrollingWave(stream, containerId) {
     const container = document.getElementById(containerId);
     if (!container) return;
     
+    // Clean up previous visualization
+    if (scrollInterval) clearInterval(scrollInterval);
+    if (scrollSource) {
+        try { scrollSource.disconnect(); } catch(e) {}
+    }
+    
     container.innerHTML = ""; 
     container.className = "scrolling-wave"; 
     container.style.display = "flex";
 
-    if (!scrollContext) scrollContext = new (window.AudioContext || window.webkitAudioContext)();
-    scrollAnalyser = scrollContext.createAnalyser();
-    scrollAnalyser.fftSize = 64; 
-    scrollAnalyser.smoothingTimeConstant = 0.5;
+    // Create or resume AudioContext
+    if (!scrollContext) {
+        scrollContext = new (window.AudioContext || window.webkitAudioContext)();
+    }
     
+    // Resume AudioContext if suspended (required by browsers)
+    if (scrollContext.state === 'suspended') {
+        scrollContext.resume();
+    }
+    
+    // Create new analyser with better settings for voice
+    scrollAnalyser = scrollContext.createAnalyser();
+    scrollAnalyser.fftSize = 256; // Increased for better resolution
+    scrollAnalyser.smoothingTimeConstant = 0.3; // Reduced for more responsive visualization
+    
+    // Create new source and connect
     scrollSource = scrollContext.createMediaStreamSource(stream);
     scrollSource.connect(scrollAnalyser);
     
-    const dataArray = new Uint8Array(scrollAnalyser.frequencyBinCount);
+    // Use time-domain data for actual waveform (better for voice sync)
+    const timeDataArray = new Uint8Array(scrollAnalyser.fftSize);
+    const freqDataArray = new Uint8Array(scrollAnalyser.frequencyBinCount);
 
     scrollInterval = setInterval(() => {
-        scrollAnalyser.getByteFrequencyData(dataArray);
+        // Get both time-domain (waveform) and frequency data
+        scrollAnalyser.getByteTimeDomainData(timeDataArray);
+        scrollAnalyser.getByteFrequencyData(freqDataArray);
         
-        // 1. Calculate Loudness
+        // Calculate volume from time-domain data (actual waveform amplitude)
         let sum = 0;
-        for(let i = 2; i < 20; i++) sum += dataArray[i];
-        let average = sum / 18;
-
-        // 2. Sensitivity Boost
-        let baseHeight = average < 5 ? 4 : (average / 255) * 150; 
+        let max = 0;
+        for(let i = 0; i < timeDataArray.length; i++) {
+            const value = Math.abs(timeDataArray[i] - 128); // Center around 0
+            sum += value;
+            if (value > max) max = value;
+        }
         
-        // 3. Voice Texture (Randomness)
-        let variation = Math.random() * 0.8 + 0.6; 
+        // Use RMS (Root Mean Square) for better volume representation
+        const rms = Math.sqrt(sum / timeDataArray.length);
+        const normalizedVolume = Math.min(1, (rms / 128) * 2); // Normalize to 0-1
+        
+        // Also get frequency data for voice range (300-3400 Hz roughly)
+        let voiceSum = 0;
+        for(let i = 2; i < 30; i++) {
+            voiceSum += freqDataArray[i];
+        }
+        const voiceLevel = voiceSum / 28;
+        
+        // Combine time-domain (volume) and frequency (voice presence) for better visualization
+        const combinedLevel = (normalizedVolume * 0.7) + ((voiceLevel / 255) * 0.3);
+        
+        // Calculate bar height with better sensitivity
+        let baseHeight = 4; // Minimum height
+        if (combinedLevel > 0.05) { // Only show bars when there's actual sound
+            baseHeight = 4 + (combinedLevel * 56); // Scale to 4-60px range
+        }
+        
+        // Add slight variation for natural look (but less random, more based on actual data)
+        const variation = 0.9 + (combinedLevel * 0.2); // Less random, more data-driven
         let finalHeight = Math.min(60, Math.max(4, baseHeight * variation));
 
         const bar = document.createElement('div');
         bar.classList.add('wave-bar-scroll');
         bar.style.height = `${finalHeight}px`;
-        bar.style.opacity = average < 10 ? 0.5 : 1;
+        bar.style.opacity = combinedLevel > 0.1 ? 1 : 0.4; // Fade when quiet
 
         container.appendChild(bar);
 
-        // --- FIX IS HERE ---
         // Calculate limit dynamically based on CURRENT width (12px = bar width + gap)
-        // We add +2 extra bars to ensure no visible gap at the edge
         const currentMaxBars = Math.floor(container.clientWidth / 12) + 2;
 
         // Only remove bars if we exceed the CURRENT visual limit
         while (container.children.length > currentMaxBars) {
             container.removeChild(container.firstChild);
         }
-    }, 50); 
+    }, 30); // Reduced interval for smoother animation (30ms = ~33fps)
 }
 function stopScrollingWave(containerId) {
-    if (scrollInterval) clearInterval(scrollInterval);
+    if (scrollInterval) {
+        clearInterval(scrollInterval);
+        scrollInterval = null;
+    }
+    
+    // Disconnect audio source
+    if (scrollSource) {
+        try {
+            scrollSource.disconnect();
+            scrollSource = null;
+        } catch(e) {
+            console.log("Source already disconnected");
+        }
+    }
+    
     const container = document.getElementById(containerId);
     if(container) {
         container.style.display = 'none';
