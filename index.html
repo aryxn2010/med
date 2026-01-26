@@ -2139,6 +2139,7 @@ async function processTextOnly() {
 
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            audioStream = stream; // Store stream for cleanup
             mediaRecorder = new MediaRecorder(stream);
             audioChunks = [];
 
@@ -2157,6 +2158,12 @@ async function processTextOnly() {
                 liveText.style.display = 'block'; // Bring text back
                 liveText.innerHTML = "<i class='fas fa-cog fa-spin'></i> Processing...";
                 
+                // Clean up stream tracks
+                if (audioStream) {
+                    audioStream.getTracks().forEach(track => track.stop());
+                    audioStream = null;
+                }
+                
                 const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
                 processFormVoice(audioBlob, ""); 
                 
@@ -2171,7 +2178,14 @@ async function processTextOnly() {
             btn.innerHTML = '<i class="fas fa-stop-circle"></i> <span>Stop Recording</span>';
 
         } catch (err) {
+            console.error("Microphone Error:", err);
             alert("Microphone Error: " + err.message);
+            // Clean up stream if it was created
+            if (audioStream) {
+                audioStream.getTracks().forEach(track => track.stop());
+                audioStream = null;
+            }
+            isRecording = false;
             textToggleBtn.disabled = false;
             textToggleBtn.style.opacity = "1";
         }
@@ -2179,6 +2193,11 @@ async function processTextOnly() {
         // 2. STOP RECORDING
         if (mediaRecorder && mediaRecorder.state !== 'inactive') {
             mediaRecorder.stop();
+        }
+        // Clean up stream tracks
+        if (audioStream) {
+            audioStream.getTracks().forEach(track => track.stop());
+            audioStream = null;
         }
         isRecording = false;
         btn.classList.remove('recording');
@@ -2896,6 +2915,7 @@ function updatePromptPlaceholder() {
         let mediaRecorder;
         let audioChunks = [];
         let isRecording = false;
+        let audioStream = null; // Store the audio stream for cleanup
 function handleVisualUpload(input) {
     if (input.files.length > 0) {
         const type = document.getElementById('scanType').value;
@@ -3333,6 +3353,7 @@ async function toggleRecording() {
         // START RECORDING
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            audioStream = stream; // Store stream for cleanup
             viz.style.display = 'flex'; // Show visualizer
             startScrollingWave(stream, 'bio-visualizer'); 
 
@@ -3344,6 +3365,12 @@ async function toggleRecording() {
             mediaRecorder.onstop = () => {
                 stopScrollingWave('bio-visualizer'); 
                 viz.style.display = 'none'; // Hide visualizer on stop
+
+                // Clean up stream tracks
+                if (audioStream) {
+                    audioStream.getTracks().forEach(track => track.stop());
+                    audioStream = null;
+                }
 
                 // STORE BLOB, DO NOT SEND YET
                 storedAudioData = new Blob(audioChunks, { type: 'audio/wav' });
@@ -3370,12 +3397,25 @@ async function toggleRecording() {
             document.querySelector('.file-upload-wrapper').style.pointerEvents = 'none';
 
         } catch (err) {
-            console.error(err);
-            alert("Microphone access denied.");
+            console.error("Microphone Error:", err);
+            alert("Microphone access denied: " + err.message);
+            // Clean up stream if it was created
+            if (audioStream) {
+                audioStream.getTracks().forEach(track => track.stop());
+                audioStream = null;
+            }
+            isRecording = false;
         }
     } else {
         // STOP RECORDING
-        mediaRecorder.stop();
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+            mediaRecorder.stop();
+        }
+        // Clean up stream tracks
+        if (audioStream) {
+            audioStream.getTracks().forEach(track => track.stop());
+            audioStream = null;
+        }
         isRecording = false;
         
         // Re-enable file upload
