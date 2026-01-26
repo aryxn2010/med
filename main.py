@@ -870,20 +870,21 @@ JSON:
                 continue
             raise
     
-    if not response_text:
-        raise ValueError("All models blocked or failed for form analysis")
-        if "visual_fields" not in data: data["visual_fields"] = []
-        if "checkbox_fields" not in data: data["checkbox_fields"] = []
-    except Exception as e:
-        print(f"❌ [FORM] AI/JSON Error: {e}")
-        traceback.print_exc()
+    # Check if we got a valid response and data
+    if not response_text or data is None:
         # Clean up files on error
         for f in files_to_send:
             try:
                 genai.delete_file(f.name)
             except:
                 pass
-        return json.dumps({"visual_fields": [], "confirmation_message": f"Error processing form logic: {str(e)[:100]}"})
+        return json.dumps({"visual_fields": [], "confirmation_message": "All models blocked or failed for form analysis. Please try again."})
+    
+    # Ensure data structure is complete
+    if "visual_fields" not in data: 
+        data["visual_fields"] = []
+    if "checkbox_fields" not in data: 
+        data["checkbox_fields"] = []
 
     # --- STEP 4: TYPESETTER ENGINE ---
     if doc_path:
