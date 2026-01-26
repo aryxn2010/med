@@ -260,20 +260,26 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 import uuid # <--- ADD THIS AT THE TOP WITH OTHER IMPORTS
 # --- UPDATED SYSTEM INSTRUCTION (UNIVERSAL PATHOLOGICAL MATCHER) ---
 # --- UPDATED SYSTEM INSTRUCTION (SIMPLE & PATIENT-FRIENDLY) ---
-SYSTEM_INSTRUCTION = """You are a clinical audio analysis assistant for medical respiratory assessment. Your role is to analyze audio recordings of breathing sounds and coughs for clinical evaluation purposes.
+SYSTEM_INSTRUCTION = """You are a clinical audio analysis expert for respiratory medicine. Your task is to analyze audio recordings of breathing sounds, coughs, and respiratory patterns to identify potential respiratory conditions.
 
-CLINICAL PROTOCOL: Analyze respiratory audio patterns. Compare to known clinical patterns. Provide structured clinical assessment.
+CLINICAL ANALYSIS PROTOCOL:
+1. Listen carefully to the audio for characteristic sounds: wheezing (asthma), stridor (croup), crackles (pneumonia), dry/hacking coughs, wet/productive coughs, shortness of breath patterns.
+2. Match audio patterns to known clinical presentations: Croup (barking seal-like cough), Asthma (wheezing, high-pitched sounds), Pneumonia (crackles, wet cough), Bronchitis (productive cough), Upper Respiratory Infection (nasal congestion sounds).
+3. Calculate internal confidence score (0-100) based on pattern matching accuracy.
+4. Provide clear, accurate medical assessment in simple language for patients.
 
 OUTPUT FORMAT (Strict JSON):
 {
   "valid_audio": true,
-  "universal_match": {"disease_name": "Clinical Condition", "similarity_score": 85},
+  "universal_match": {"disease_name": "Specific Clinical Condition Name", "similarity_score": 85},
   "severity": "Low/Moderate/High",
-  "infection_type": "Viral/Bacterial/Chronic/Irritation",
-  "simple_explanation": "Clinical observation in plain language.",
-  "audio_characteristics": "Clinical description of audio patterns.",
-  "recommendation": "Clinical guidance."
-}"""
+  "infection_type": "Viral/Bacterial/Chronic/Irritation/Allergic",
+  "simple_explanation": "Clear explanation of what the condition is and what was detected in the audio, in plain language without medical jargon.",
+  "audio_characteristics": "Detailed description of specific sounds heard: type of cough, breathing patterns, any distinctive sounds (wheezing, stridor, crackles, etc.).",
+  "recommendation": "Specific, actionable medical advice based on the findings."
+}
+
+CRITICAL: Be accurate and specific. Identify the actual respiratory condition based on audio patterns."""
 
 MEDICINE_SYSTEM_INSTRUCTION = f"""
 You are an AI Clinical Expert. 
@@ -391,43 +397,81 @@ def analyze_vision_with_gemini(image_paths, scan_type, user_prompt="", language=
         HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE  # <--- CHANGED
     }
     
-    model = genai.GenerativeModel(
-        model_name=MODEL_NAME,
-        system_instruction=sys_instruction,
-        safety_settings=safety_config_vision
-    )
+    # Try models in order: pro first for accuracy, then flash
+    models_to_try = [MODEL_NAME, "gemini-3-flash-preview"]
+    response = None
+    response_text = None
     
-    try:
-        response = model.generate_content(
-            content_payload,
-            generation_config={
-                "response_mime_type": "application/json",
-                "max_output_tokens": 1500  # Limit for faster response
-            },
-            safety_settings=safety_config_vision,  # Pass safety settings in generate_content
-            request_options={"timeout": 120}  # Extended to 120 seconds for vision
-        )
-        
-        # Verify response is valid
+    for model_idx, model_name in enumerate(models_to_try):
         try:
-            response_text = safe_get_response_text(response)
-        except ValueError as e:
-            # Clean up and re-raise
+            print(f"🤖 [VISION] Using {model_name} for vision analysis (attempt {model_idx + 1}/{len(models_to_try)})...")
+            model = genai.GenerativeModel(
+                model_name=model_name,
+                system_instruction=sys_instruction,
+                safety_settings=safety_config_vision
+            )
+            
+            response = model.generate_content(
+                content_payload,
+                generation_config={
+                    "response_mime_type": "application/json",
+                    "max_output_tokens": 1500
+                },
+                safety_settings=safety_config_vision,
+                request_options={"timeout": 120}
+            )
+            
+            # Verify response is valid
+            try:
+                response_text = safe_get_response_text(response)
+                break  # Success - exit loop
+            except ValueError as ve:
+                error_msg = str(ve).lower()
+                if ("safety" in error_msg or "blocked" in error_msg) and model_idx < len(models_to_try) - 1:
+                    print(f"🚫 [VISION] {model_name} blocked, trying next model...")
+                    continue  # Try next model
+                else:
+                    # Clean up and re-raise
+                    for ref in uploaded_refs:
+                        try:
+                            genai.delete_file(ref.name)
+                        except:
+                            pass
+                    raise ValueError(f"Vision analysis response error: {ve}")
+                    
+        except ValueError as ve:
+            error_msg = str(ve).lower()
+            if ("safety" in error_msg or "blocked" in error_msg) and model_idx < len(models_to_try) - 1:
+                print(f"🚫 [VISION] {model_name} blocked, trying next model...")
+                continue
+            else:
+                # Clean up uploaded files on error
+                for ref in uploaded_refs:
+                    try:
+                        genai.delete_file(ref.name)
+                    except:
+                        pass
+                raise
+        except Exception as e:
+            if model_idx < len(models_to_try) - 1:
+                print(f"⚠️ [VISION] Error with {model_name}, trying next model: {e}")
+                continue
+            # Clean up uploaded files on error
             for ref in uploaded_refs:
                 try:
                     genai.delete_file(ref.name)
                 except:
                     pass
-            raise ValueError(f"Vision analysis response error: {e}")
-            
-    except Exception as e:
-        # Clean up uploaded files on error
+            raise  # Re-raise to be handled by caller
+    
+    if not response_text:
+        # Clean up and raise error
         for ref in uploaded_refs:
             try:
                 genai.delete_file(ref.name)
             except:
                 pass
-        raise  # Re-raise to be handled by caller
+        raise ValueError("All models blocked or failed for vision analysis")
     
     for ref in uploaded_refs:
         try:
@@ -660,35 +704,57 @@ def analyze_form_voice(audio_path, text_input, mode, doc_path=None, language='en
                 HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
                 HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
                 HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-                HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE # <--- CHANGED
+                HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE
             }
             
-            # Use faster flash model for transcription with relaxed safety settings
-            transcribe_model = genai.GenerativeModel(
-                "gemini-3-flash-preview",
-                safety_settings=safety_config_form
-            )
+            # Try models for transcription: pro first, then flash
+            transcribe_models = [MODEL_NAME, "gemini-3-flash-preview"]
+            transcribed_text = ""
             
-            print(f"🎙️ [FORM] Transcribing audio...")
-            transcribe_res = transcribe_model.generate_content(
-                [audio_file, f"Transcribe this medical audio recording exactly into {target_lang}. Return ONLY the transcribed text, no additional commentary."],
-                generation_config={"max_output_tokens": 500},  # Limit tokens for speed
-                safety_settings=safety_config_form,  # Pass safety settings in generate_content
-                request_options={"timeout": 60}  # Extended timeout
-            )
-            
-            # Safely extract text with error handling
-            try:
-                transcribed_text = safe_get_response_text(transcribe_res).strip()
-            except ValueError as e:
-                print(f"⚠️ [FORM] Transcription blocked or failed: {e}")
-                # Continue without transcription if it fails
-                transcribed_text = ""
-                if "safety" in str(e).lower() or "blocked" in str(e).lower():
-                    print(f"⚠️ [FORM] Audio may contain content that triggered safety filters. Skipping transcription.")
-            final_text_input += f" {transcribed_text}"
-            transcribe_elapsed = time.time() - upload_start
-            print(f"✅ [FORM] Transcription complete in {transcribe_elapsed:.1f}s: '{transcribed_text[:50]}...'")
+            for transcribe_idx, transcribe_model_name in enumerate(transcribe_models):
+                try:
+                    print(f"🎙️ [FORM] Transcribing with {transcribe_model_name} (attempt {transcribe_idx + 1}/{len(transcribe_models)})...")
+                    transcribe_model = genai.GenerativeModel(
+                        transcribe_model_name,
+                        safety_settings=safety_config_form
+                    )
+                    
+                    transcribe_res = transcribe_model.generate_content(
+                        [audio_file, f"This is a medical audio recording. Transcribe the spoken words exactly into {target_lang}. Return ONLY the transcribed text, no additional commentary or analysis."],
+                        generation_config={"max_output_tokens": 500},
+                        safety_settings=safety_config_form,
+                        request_options={"timeout": 60}
+                    )
+                    
+                    # Safely extract text with error handling
+                    try:
+                        transcribed_text = safe_get_response_text(transcribe_res).strip()
+                        if transcribed_text:
+                            print(f"✅ [FORM] Transcription successful: '{transcribed_text[:50]}...'")
+                            break  # Success - exit loop
+                    except ValueError as e:
+                        error_msg = str(e).lower()
+                        if ("safety" in error_msg or "blocked" in error_msg) and transcribe_idx < len(transcribe_models) - 1:
+                            print(f"🚫 [FORM] {transcribe_model_name} blocked, trying next model...")
+                            continue  # Try next model
+                        else:
+                            print(f"⚠️ [FORM] Transcription failed: {e}")
+                            transcribed_text = ""
+                            break
+                except Exception as e:
+                    if transcribe_idx < len(transcribe_models) - 1:
+                        print(f"⚠️ [FORM] Error with {transcribe_model_name}, trying next: {e}")
+                        continue
+                    else:
+                        print(f"⚠️ [FORM] All transcription models failed: {e}")
+                        transcribed_text = ""
+            # Add transcribed text to final input if available
+            if transcribed_text:
+                final_text_input += f" {transcribed_text}"
+                transcribe_elapsed = time.time() - upload_start
+                print(f"✅ [FORM] Transcription complete in {transcribe_elapsed:.1f}s: '{transcribed_text[:50]}...'")
+            else:
+                print(f"⚠️ [FORM] No transcription available, using text input only")
             
             # Clean up immediately after transcription
             if audio_file:
@@ -741,43 +807,71 @@ JSON:
         HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
         HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
         HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_ONLY_HIGH
+        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE
     }
     
-    # Use flash model for faster processing with relaxed safety settings
-    model_name = "gemini-3-flash-preview"
-    print(f"🤖 [FORM] Using {model_name} for form analysis...")
-    model = genai.GenerativeModel(
-        model_name=model_name,
-        safety_settings=safety_config_form
-    )
+    # Try models in order: pro first for accuracy, then flash
+    models_to_try = [MODEL_NAME, "gemini-3-flash-preview"]
+    response = None
+    response_text = None
     
-    try:
-        analysis_start = time.time()
-        response = model.generate_content(
-            files_to_send + [EXTREME_PROMPT], 
-            generation_config={
-                "response_mime_type": "application/json",
-                "max_output_tokens": 1200,  # Reduced for faster response
-                "temperature": 0.3  # Lower temperature for faster, more deterministic output
-            },
-            safety_settings=safety_config_form,  # Pass safety settings in generate_content
-            request_options={"timeout": 120}  # Extended timeout: 2 minutes
-        )
-        analysis_elapsed = time.time() - analysis_start
-        print(f"✅ [FORM] Form analysis complete in {analysis_elapsed:.1f}s")
-        
-        # Safely extract and parse response
+    for model_idx, model_name in enumerate(models_to_try):
         try:
-            response_text = safe_get_response_text(response)
-            data = json.loads(response_text)
-        except json.JSONDecodeError as e:
-            print(f"⚠️ [FORM] JSON parse error, attempting to clean: {e}")
-            data = clean_json_response(response_text)
-            if data is None:
-                raise ValueError(f"Could not parse form analysis JSON: {e}")
-        except ValueError as e:
-            raise ValueError(f"Form analysis response error: {e}")
+            print(f"🤖 [FORM] Using {model_name} for form analysis (attempt {model_idx + 1}/{len(models_to_try)})...")
+            model = genai.GenerativeModel(
+                model_name=model_name,
+                safety_settings=safety_config_form
+            )
+            
+            analysis_start = time.time()
+            response = model.generate_content(
+                files_to_send + [EXTREME_PROMPT], 
+                generation_config={
+                    "response_mime_type": "application/json",
+                    "max_output_tokens": 1200,
+                    "temperature": 0.3
+                },
+                safety_settings=safety_config_form,
+                request_options={"timeout": 120}
+            )
+            analysis_elapsed = time.time() - analysis_start
+            print(f"✅ [FORM] Form analysis complete in {analysis_elapsed:.1f}s")
+            
+            # Safely extract and parse response
+            try:
+                response_text = safe_get_response_text(response)
+                data = json.loads(response_text)
+                break  # Success - exit loop
+            except ValueError as ve:
+                error_msg = str(ve).lower()
+                if ("safety" in error_msg or "blocked" in error_msg) and model_idx < len(models_to_try) - 1:
+                    print(f"🚫 [FORM] {model_name} blocked, trying next model...")
+                    continue  # Try next model
+                else:
+                    raise
+            except json.JSONDecodeError as e:
+                print(f"⚠️ [FORM] JSON parse error, attempting to clean: {e}")
+                data = clean_json_response(response_text)
+                if data is None:
+                    if model_idx < len(models_to_try) - 1:
+                        continue  # Try next model
+                    raise ValueError(f"Could not parse form analysis JSON: {e}")
+                break  # Success
+        except ValueError as ve:
+            error_msg = str(ve).lower()
+            if ("safety" in error_msg or "blocked" in error_msg) and model_idx < len(models_to_try) - 1:
+                print(f"🚫 [FORM] {model_name} blocked, trying next model...")
+                continue
+            else:
+                raise ValueError(f"Form analysis response error: {ve}")
+        except Exception as e:
+            if model_idx < len(models_to_try) - 1:
+                print(f"⚠️ [FORM] Error with {model_name}, trying next model: {e}")
+                continue
+            raise
+    
+    if not response_text:
+        raise ValueError("All models blocked or failed for form analysis")
         if "visual_fields" not in data: data["visual_fields"] = []
         if "checkbox_fields" not in data: data["checkbox_fields"] = []
     except Exception as e:
@@ -1047,34 +1141,52 @@ def analyze_audio_with_gemini(audio_path, user_prompt, language='en'):
             HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE # <--- CHANGED
         }
         
-        # Try flash model first, fallback to pro if safety filters trigger
-        use_pro_model = False
-        print(f"🤖 [AUDIO] Using gemini-3-flash-preview for fast analysis...")
+        # Use Pro model for best accuracy - it's more reliable for medical analysis
+        print(f"🤖 [AUDIO] Using {MODEL_NAME} for accurate medical analysis...")
         model = genai.GenerativeModel(
-            model_name="gemini-3-flash-preview",
+            model_name=MODEL_NAME,  # Use pro for accuracy
             system_instruction=SYSTEM_INSTRUCTION,
             safety_settings=safety_config
         )
         
-        # Clinical prompt - more specific to reduce false positives
-        # Add explicit medical context to help avoid false safety triggers
-        prompt = f"""This is a medical audio recording for clinical respiratory analysis. 
-Patient context: {user_prompt if user_prompt else 'General respiratory assessment'}
-This audio contains breathing sounds, coughs, or other respiratory patterns for medical evaluation.
-Analyze the audio and return structured JSON analysis only in {target_lang}."""
+        # Enhanced clinical prompt for accurate analysis
+        prompt = f"""Analyze this medical audio recording for respiratory condition assessment.
 
-        # Retry logic with longer timeouts
+CLINICAL CONTEXT:
+- Patient symptoms/context: {user_prompt if user_prompt else 'General respiratory assessment'}
+- This is a legitimate medical audio recording containing breathing sounds, coughs, or respiratory patterns
+- Purpose: Clinical evaluation and respiratory condition identification
+
+ANALYSIS REQUIREMENTS:
+1. Identify the specific respiratory condition based on audio patterns
+2. Describe the exact sounds heard (wheezing, stridor, crackles, cough type, etc.)
+3. Provide accurate medical assessment
+4. Output language: {target_lang}
+
+Return structured JSON analysis with accurate medical findings."""
+
+        # Retry logic with model fallback if safety filters trigger
         response = None
         response_text = None
         safety_blocked = False
+        models_to_try = [MODEL_NAME, "gemini-3-flash-preview"]  # Try pro first, then flash
+        current_model_idx = 0
         
-        for attempt in range(max_retries):
+        for attempt in range(max_retries * 2):  # Allow trying both models
             try:
                 attempt_start = time.time()
-                print(f"🔄 [AUDIO] Attempt {attempt + 1}/{max_retries} - Starting analysis...")
+                current_model = models_to_try[current_model_idx] if current_model_idx < len(models_to_try) else MODEL_NAME
+                print(f"🔄 [AUDIO] Attempt {attempt + 1} - Using {current_model}...")
+                
+                # Create model if we switched
+                if current_model != model._model_name if hasattr(model, '_model_name') else MODEL_NAME:
+                    model = genai.GenerativeModel(
+                        model_name=current_model,
+                        system_instruction=SYSTEM_INSTRUCTION,
+                        safety_settings=safety_config
+                    )
                 
                 # Extended timeout: 180 seconds (3 minutes) per attempt
-                # Total possible: 180s * 2 attempts = 6 minutes max
                 response = model.generate_content(
                     [audio_file, prompt],
                     generation_config={
@@ -1105,20 +1217,13 @@ Analyze the audio and return structured JSON analysis only in {target_lang}."""
                         print(f"🚫 [AUDIO] Content blocked by safety filters on attempt {attempt + 1}")
                         safety_blocked = True
                         
-                        # Fallback: Try pro model if flash was blocked and we haven't tried pro yet
-                        if not use_pro_model and attempt == 0:
-                            print(f"🔄 [AUDIO] Switching to gemini-3-pro-preview as fallback...")
-                            use_pro_model = True
-                            # Create new model with pro
-                            model = genai.GenerativeModel(
-                                model_name=MODEL_NAME,  # Use pro model
-                                system_instruction=SYSTEM_INSTRUCTION,
-                                safety_settings=safety_config
-                            )
-                            # Reset attempt counter to retry with pro model
-                            continue  # Retry with pro model
+                        # Try next model if available
+                        if current_model_idx < len(models_to_try) - 1:
+                            current_model_idx += 1
+                            print(f"🔄 [AUDIO] Switching to {models_to_try[current_model_idx]} as fallback...")
+                            continue  # Retry with different model
                         else:
-                            # Both models blocked - will return default after loop
+                            # All models blocked - will return default after loop
                             break
                     else:
                         raise
@@ -1129,15 +1234,10 @@ Analyze the audio and return structured JSON analysis only in {target_lang}."""
                 if "safety" in error_str or "blocked" in error_str or "recitation" in error_str:
                     print(f"🚫 [AUDIO] Safety filter ValueError on attempt {attempt + 1}")
                     safety_blocked = True
-                    # Fallback: Try pro model if flash was blocked
-                    if not use_pro_model and attempt == 0:
-                        print(f"🔄 [AUDIO] Switching to gemini-3-pro-preview as fallback...")
-                        use_pro_model = True
-                        model = genai.GenerativeModel(
-                            model_name=MODEL_NAME,
-                            system_instruction=SYSTEM_INSTRUCTION,
-                            safety_settings=safety_config
-                        )
+                    # Try next model if available
+                    if current_model_idx < len(models_to_try) - 1:
+                        current_model_idx += 1
+                        print(f"🔄 [AUDIO] Switching to {models_to_try[current_model_idx]}...")
                         continue
                     else:
                         break  # Exit loop to return default
@@ -1152,15 +1252,10 @@ Analyze the audio and return structured JSON analysis only in {target_lang}."""
                 if "safety" in error_str or "blocked" in error_str or "recitation" in error_str or "finish_reason" in error_str:
                     print(f"🚫 [AUDIO] Safety filter triggered on attempt {attempt + 1}")
                     safety_blocked = True
-                    # Fallback: Try pro model if flash was blocked
-                    if not use_pro_model and attempt == 0:
-                        print(f"🔄 [AUDIO] Switching to gemini-3-pro-preview as fallback...")
-                        use_pro_model = True
-                        model = genai.GenerativeModel(
-                            model_name=MODEL_NAME,
-                            system_instruction=SYSTEM_INSTRUCTION,
-                            safety_settings=safety_config
-                        )
+                    # Try next model if available
+                    if current_model_idx < len(models_to_try) - 1:
+                        current_model_idx += 1
+                        print(f"🔄 [AUDIO] Switching to {models_to_try[current_model_idx]}...")
                         continue
                     else:
                         break  # Exit loop to return default
